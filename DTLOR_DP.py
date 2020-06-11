@@ -132,25 +132,26 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                             lowest_cost_spec=[]
                             for l1 in valid(l_bottom, allsynteny):
                                 for l2 in valid(l_bottom, allsynteny):
-                                    synteny_cost=delta(l_bottom,l1, Origin, R)+delta(l_bottom,l2, Origin, R)
-                                    #add in the delta for handle branch 
+                                    l_is_star = l_bottom == "*"
+                                    synteny_cost = delta(l_bottom, l1, Origin, R) + delta(l_bottom, l2, Origin, R)
+                                    # Add in the delta for handle branch 
                                     if ep=='pTop':
-                                        synteny_cost+=delta(top_is_star,l_bottom,Origin, R)
+                                        synteny_cost += delta(top_is_star, l_bottom, Origin, R)
 
                                     #TODO these two lines take up >50% of time in the nested loop for locs
-                                    co1=C[(ep1, eh1,l_bottom, l1)] + C[(ep2, eh2, l_bottom, l2)]
-                                    co2=C[(ep1, eh2, l_bottom, l1)] + C[(ep2, eh1, l_bottom, l2)]
+                                    co1=C[(ep1, eh1, l_is_star, l1)] + C[(ep2, eh2, l_is_star, l2)]
+                                    co2=C[(ep1, eh2, l_is_star, l1)] + C[(ep2, eh1, l_is_star, l2)]
                                     
                                     CO_cost=min(co1,co2)
                                     CO_total=synteny_cost+CO_cost
                                     if CO_total<COepeh:
                                         COepeh=CO_total
                                         if CO_cost==co1:
-                                            lowest_cost_spec=["S", (ep1, eh1,l_bottom, l1), \
-                                            (ep2, eh2, l_bottom, l2)]
+                                            lowest_cost_spec=["S", (ep1, eh1, l_is_star, l1), \
+                                            (ep2, eh2, l_is_star, l2)]
                                         else:
-                                            lowest_cost_spec=["S", (ep1, eh2,l_bottom,l1), \
-                                            (ep2, eh1, l_bottom, l2)]
+                                            lowest_cost_spec=["S", (ep1, eh2, l_is_star, l1), \
+                                            (ep2, eh1, l_is_star, l2)]
                             if COepeh<Infinity:
                                 
                                 coMin.append(lowest_cost_spec)
@@ -182,7 +183,7 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                             Amin = lossMin
                         else:
                             #lossMin, coMin are  list of lists
-                            Amin = lossMin+coMin
+                            Amin = lossMin + coMin
                         
 
                     # Compute C(ep, eh,l_top, l_bottom)
@@ -193,14 +194,16 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                         dupList=[Infinity]
                         for l1 in valid(l_bottom, allsynteny):
                             for l2 in valid(l_bottom, allsynteny):
+                                l_is_star = l_bottom == "*"
                                 #TODO: this line takes over half of time in this nested loop
-                                dup_cost=delta(l_bottom,l1, Origin, R)+delta(l_bottom,l2, Origin, R)+C[(ep1, eh, l_bottom, l1)]+C[(ep2, eh, l_bottom, l2)]
+                                dup_cost=delta(l_bottom, l1, Origin, R)+delta(l_bottom, l2, Origin, R) + \
+                                        C[(ep1, eh, l_is_star, l1)]+C[(ep2, eh, l_is_star, l2)]
                                 #only add the duplication cost if the bottom synteny on ep is not *
                                 if l_bottom!="*":
                                     dup_cost+=D
                                 if dup_cost<DUPepeh:
                                     DUPepeh=dup_cost
-                                    dupList=["D", (ep1, vh, l_bottom, l1), (ep2, vh, l_bottom, l2)]
+                                    dupList=["D", (ep1, vh, l_is_star, l1), (ep2, vh, l_is_star, l2)]
                     else:
                         DUPepeh = Infinity
                         dupList = [Infinity]
@@ -213,43 +216,44 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                         #need to find all possible children syntenies
                         for l1 in valid(l_bottom, allsynteny):
                             for l2 in valid(l_bottom, allsynteny):
-                                ep2_switch=C[(ep1, eh, l_bottom, l1)] + bestSwitch[(ep2, eh, l_bottom, l2)]
-                                ep1_switch=C[(ep2, eh, l_bottom, l2)] + bestSwitch[(ep1, eh, l_bottom, l1)]
+                                l_is_star = l_bottom == "*"
+                                ep2_switch=C[(ep1, eh, l_is_star, l1)] + bestSwitch[(ep2, eh, l_is_star, l2)]
+                                ep1_switch=C[(ep2, eh, l_is_star, l2)] + bestSwitch[(ep1, eh, l_is_star, l1)]
                                 min_switch=min(ep2_switch, ep1_switch)
                                 switch_cost = T+delta(l_bottom,l1, Origin, R)+delta(l_bottom,l2, Origin, R)+ min_switch
                                 if switch_cost<SWITCHepeh:
                                     SWITCHepeh=switch_cost
                                     # if ep2 switching has the lowest cost
                                     if ep2_switch < ep1_switch:
-                                        for location in bestSwitchLocations[(ep2,vh,l_bottom,l2)]:
+                                        for location in bestSwitchLocations[(ep2,vh,l_is_star,l2)]:
                                             currentLoc = location[1] # Switch landing site
-                                            switchList.append(["T", (ep1, vh, l_bottom, l1), (ep2, \
-                                                currentLoc, l_bottom, l2)])
+                                            switchList.append(["T", (ep1, vh, l_is_star, l1), (ep2, \
+                                                currentLoc, l_is_star, l2)])
                                     # if ep1 switching has the lowest cost
                                     elif ep1_switch<ep2_switch: 
-                                        for location in bestSwitchLocations[(ep1,vh, l_bottom,l1)]:
+                                        for location in bestSwitchLocations[(ep1,vh, l_is_star, l1)]:
                                             currentLoc = location[1]
-                                            switchList.append(["T", (ep2, vh, l_bottom, l2), \
-                                                (ep1, currentLoc, l_bottom, l1)])
+                                            switchList.append(["T", (ep2, vh, l_is_star, l2), \
+                                                (ep1, currentLoc, l_is_star, l1)])
                                     # if ep1 switching has the same cost as ep2 switching
                                     else: 
-                                        for location in bestSwitchLocations[(ep2,vh,l_bottom,l2)]:
+                                        for location in bestSwitchLocations[(ep2, vh, l_is_star, l2)]:
                                             currentLoc = location[1]
                                             if currentLoc != None:
-                                                switchList.append(["T", (ep1, vh, l_bottom, l1), (ep2, \
-                                                currentLoc, l_bottom, l2)])
+                                                switchList.append(["T", (ep1, vh, l_is_star, l1), (ep2, \
+                                                currentLoc, l_is_star, l2)])
                                             else:
-                                                switchList.append(["T", (ep1, vh, l_bottom, l1), \
-                                                    (ep2, currentLoc, l_bottom, l2)])
+                                                switchList.append(["T", (ep1, vh, l_is_star, l1), \
+                                                    (ep2, currentLoc, l_is_star, l2)])
                                    
-                                        for location in bestSwitchLocations[(ep1,vh, l_bottom,l1)]:
+                                        for location in bestSwitchLocations[(ep1,vh, l_is_star,l1)]:
                                             currentLoc = location[1]
                                             if currentLoc != None:
-                                                switchList.append(["T", (ep2, vh, l_bottom, l2), \
-                                                (ep1, currentLoc, l_bottom, l1)])
+                                                switchList.append(["T", (ep2, vh, l_is_star, l2), \
+                                                (ep1, currentLoc, l_is_star, l1)])
                                             else:
-                                                switchList.append(["T", (ep1, vh, l_bottom, l1), \
-                                                    (ep2, currentLoc, l_bottom, l2)])           
+                                                switchList.append(["T", (ep1, vh, l_is_star, l1), \
+                                                    (ep2, currentLoc, l_is_star, l2)])           
                         if switchList==[]:
                             switchList=[[Infinity]]
 
@@ -434,10 +438,12 @@ def findOneMPR(tupleList, eventDict, MPR):
      of the form (vp, vh, l_top, l_bottom), eventDict, the dictionary of events and 
      children for each node, and a dictionary to record one MPR, which is returned. 
     """
-    mapping=choice(tupleList)
-    event=choice(eventDict[mapping])  #randomly pick an event
+    mapping = choice(tupleList)
+    event = choice(eventDict[mapping])  #randomly pick an event
+    #print(event)
     MPR[mapping]=event  
     for location in event: #there should be eventType,and two child mapping nodes
         if type(location) is tuple and location != (None, None, None, None):
             findOneMPR([location], eventDict, MPR)
     return MPR
+

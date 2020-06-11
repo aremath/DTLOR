@@ -28,6 +28,7 @@ def reconcile(argT):
     for geneTree in allRootingsL:
         geneTreeD=trees.parseTreeForDP(geneTree,parasite=True) # gene tree to right format
         MPR,cost=DTLOR_DP.DP(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+        print("Min Cost: {}".format(cost))
         if cost<best_score: 
             #if the score is better than current best
             #update best score, clear record and add new record
