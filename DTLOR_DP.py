@@ -217,43 +217,43 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                         for l1 in valid(l_bottom, allsynteny):
                             for l2 in valid(l_bottom, allsynteny):
                                 l_is_star = l_bottom == "*"
-                                ep2_switch=C[(ep1, eh, l_is_star, l1)] + bestSwitch[(ep2, eh, l_is_star, l2)]
-                                ep1_switch=C[(ep2, eh, l_is_star, l2)] + bestSwitch[(ep1, eh, l_is_star, l1)]
+                                ep2_switch=C[(ep1, eh, l_is_star, l1)] + bestSwitch[(ep2, eh, l2)]
+                                ep1_switch=C[(ep2, eh, l_is_star, l2)] + bestSwitch[(ep1, eh, l1)]
                                 min_switch=min(ep2_switch, ep1_switch)
                                 switch_cost = T+delta(l_bottom,l1, Origin, R)+delta(l_bottom,l2, Origin, R)+ min_switch
                                 if switch_cost<SWITCHepeh:
                                     SWITCHepeh=switch_cost
                                     # if ep2 switching has the lowest cost
                                     if ep2_switch < ep1_switch:
-                                        for location in bestSwitchLocations[(ep2,vh,l_is_star,l2)]:
+                                        for location in bestSwitchLocations[(ep2,vh,l2)]:
                                             currentLoc = location[1] # Switch landing site
-                                            switchList.append(["T", (ep1, vh, l_is_star, l1), (ep2, \
-                                                currentLoc, l_is_star, l2)])
+                                            switchList.append(["T", (ep1, vh, l1), (ep2, \
+                                                currentLoc, l2)])
                                     # if ep1 switching has the lowest cost
                                     elif ep1_switch<ep2_switch: 
-                                        for location in bestSwitchLocations[(ep1,vh, l_is_star, l1)]:
+                                        for location in bestSwitchLocations[(ep1,vh, l1)]:
                                             currentLoc = location[1]
-                                            switchList.append(["T", (ep2, vh, l_is_star, l2), \
-                                                (ep1, currentLoc, l_is_star, l1)])
+                                            switchList.append(["T", (ep2, vh, l2), \
+                                                (ep1, currentLoc, l1)])
                                     # if ep1 switching has the same cost as ep2 switching
                                     else: 
-                                        for location in bestSwitchLocations[(ep2, vh, l_is_star, l2)]:
+                                        for location in bestSwitchLocations[(ep2, vh, l2)]:
                                             currentLoc = location[1]
                                             if currentLoc != None:
-                                                switchList.append(["T", (ep1, vh, l_is_star, l1), (ep2, \
-                                                currentLoc, l_is_star, l2)])
+                                                switchList.append(["T", (ep1, vh, l1), (ep2, \
+                                                currentLoc, l2)])
                                             else:
-                                                switchList.append(["T", (ep1, vh, l_is_star, l1), \
-                                                    (ep2, currentLoc, l_is_star, l2)])
+                                                switchList.append(["T", (ep1, vh, l1), \
+                                                    (ep2, currentLoc, l2)])
                                    
-                                        for location in bestSwitchLocations[(ep1,vh, l_is_star,l1)]:
+                                        for location in bestSwitchLocations[(ep1,vh, l1)]:
                                             currentLoc = location[1]
                                             if currentLoc != None:
-                                                switchList.append(["T", (ep2, vh, l_is_star, l2), \
-                                                (ep1, currentLoc, l_is_star, l1)])
+                                                switchList.append(["T", (ep2, vh, l2), \
+                                                (ep1, currentLoc, l1)])
                                             else:
-                                                switchList.append(["T", (ep1, vh, l_is_star, l1), \
-                                                    (ep2, currentLoc, l_is_star, l2)])           
+                                                switchList.append(["T", (ep1, vh, l1), \
+                                                    (ep2, currentLoc, l2)])           
                         if switchList==[]:
                             switchList=[[Infinity]]
 
@@ -296,8 +296,8 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                         if oMin == 2:
                             oBest[(vp,vh, top_is_star, l_bottom)].extend(oBest[(vp, eh2, top_is_star, l_bottom)])
                 # Compute bestSwitch values
-                bestSwitch[(ep, "hTop", top_is_star, l_bottom)] = Infinity
-                bestSwitchLocations[(vp, hostTree["hTop"][1], top_is_star, l_bottom)] = [(None,None, None, None)]
+                bestSwitch[(ep, "hTop", l_bottom)] = Infinity
+                bestSwitchLocations[(vp, hostTree["hTop"][1], l_bottom)] = [(None,None, None, None)]
                 for eh in preorder(hostTree, "hTop"):
                     _, vh, eh1, eh2 = hostTree[eh]
 
@@ -309,29 +309,29 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                     # find best place for a switch to occur (bestSwitch)
                     # and the location to which the edge switches (bestSwitchLocations)   
                     if eh1 != None and eh2 != None: # not a tip
-                        bestSwitchLocations[(vp, eh1, top_is_star, l_bottom)] = []
-                        bestSwitchLocations[(vp, eh2, top_is_star, l_bottom)] = []
-                        ep_bestSwitch=bestSwitch[(ep, eh, top_is_star, l_bottom)]
+                        bestSwitchLocations[(vp, eh1, l_bottom)] = []
+                        bestSwitchLocations[(vp, eh2, l_bottom)] = []
+                        ep_bestSwitch=bestSwitch[(ep, eh, l_bottom)]
                         O_eh2=O[(ep, eh2, top_is_star, l_bottom)]
                         O_eh1=O[(ep, eh1, top_is_star, l_bottom)]
-                        bestSwitch[(ep, eh1, top_is_star, l_bottom)] = min(ep_bestSwitch,O_eh2)
-                        bestSwitch[(ep, eh2, top_is_star, l_bottom)] = min(ep_bestSwitch,O_eh1)
+                        bestSwitch[(ep, eh1, l_bottom)] = min(ep_bestSwitch,O_eh2)
+                        bestSwitch[(ep, eh2, l_bottom)] = min(ep_bestSwitch,O_eh1)
                     
-                        if bestSwitch[(ep, eh1, top_is_star, l_bottom)] == ep_bestSwitch and \
-                        bestSwitchLocations[(vp, vh, top_is_star, l_bottom)] != [(None, None, None, None)]:
-                            bestSwitchLocations[(vp, eh1, top_is_star, l_bottom)].extend\
-                            (bestSwitchLocations[(vp, vh, top_is_star, l_bottom)])
-                        if bestSwitch[(ep, eh1, top_is_star, l_bottom)] == O_eh2 and \
+                        if bestSwitch[(ep, eh1, l_bottom)] == ep_bestSwitch and \
+                        bestSwitchLocations[(vp, vh, l_bottom)] != [(None, None, None, None)]:
+                            bestSwitchLocations[(vp, eh1, l_bottom)].extend\
+                            (bestSwitchLocations[(vp, vh, l_bottom)])
+                        if bestSwitch[(ep, eh1, l_bottom)] == O_eh2 and \
                         oBest[(vp, eh2, top_is_star, l_bottom)]!= [(None, None, None, None)]:
-                            bestSwitchLocations[(vp, eh1, top_is_star, l_bottom)].extend\
+                            bestSwitchLocations[(vp, eh1, l_bottom)].extend\
                             (oBest[(vp, eh2, top_is_star, l_bottom)])
-                        if bestSwitch[(ep, eh2, top_is_star, l_bottom)] == ep_bestSwitch and \
-                        bestSwitchLocations[(vp, vh, top_is_star, l_bottom)] != [(None, None, None, None)]:
-                            bestSwitchLocations[(vp, eh2, top_is_star, l_bottom)].extend\
-                            (bestSwitchLocations[(vp, vh, top_is_star, l_bottom)])
-                        if bestSwitch[(ep, eh2, top_is_star, l_bottom)] == O_eh1 and \
+                        if bestSwitch[(ep, eh2, l_bottom)] == ep_bestSwitch and \
+                        bestSwitchLocations[(vp, vh,  l_bottom)] != [(None, None, None, None)]:
+                            bestSwitchLocations[(vp, eh2, l_bottom)].extend\
+                            (bestSwitchLocations[(vp, vh, l_bottom)])
+                        if bestSwitch[(ep, eh2, l_bottom)] == O_eh1 and \
                         oBest[(vp, eh1, top_is_star, l_bottom)]!=[(None, None, None, None)]:
-                            bestSwitchLocations[(vp, eh2, top_is_star, l_bottom)].extend\
+                            bestSwitchLocations[(vp, eh2, l_bottom)].extend\
                             (oBest[(vp, eh1, top_is_star, l_bottom)])
     
     for key in bestSwitchLocations:
