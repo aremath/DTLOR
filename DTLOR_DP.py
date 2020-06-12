@@ -12,6 +12,7 @@
 # Edited by Annalise Schweickart and Carter Slocum, July 2015 to return
 # the DTL reconciliation graph that uses frequency scoring, as well as the
 # number of reconciliations of the host and parasite trees
+# Edited by Ross Mawhorter in 2020 to reduce the running time per Rose Liu's formulation.
 
 # import newickFormatReader
 from Greedy import *
