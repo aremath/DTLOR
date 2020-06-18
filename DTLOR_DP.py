@@ -78,6 +78,14 @@ def postorder(tree, rootEdgeName):
                postorder(tree, rightChildEdgeName) + \
                [rootEdgeName]
 
+def check_tip(vh, eh1, eh2):
+    if eh1 is None and eh2 is None:
+        return True
+    elif eh1 is not None and eh2 is not None:
+        return False
+    else:
+        assert False, "Species node with one child: {}".format(vh)
+
 # returns ce = oplus_i ce_i
 #TODO: rename
 def combine_costs(events_list):
@@ -91,17 +99,16 @@ def combine_costs(events_list):
     cost = Infinity
     events = []
     for c,e in events_list:
-        print("\tCost: {}".format(c))
-        print("\tEvents: {}".format(events))
-        assert type(e) is list, e
-        assert (type(c) is float) or (type(c) is int), (c, e)
-        #print(c, e)
+        #print("\tCost: {}".format(c))
+        #print("\tEvents: {}".format(events))
+        #assert type(e) is list, e
+        #assert (type(c) is float) or (type(c) is int), (c, e)
         if cost > c:
             cost = c
             events = e
         elif cost == c:
             events.extend(e)
-    print("Events: {}".format(events))
+    #print("Events: {}".format(events))
     return (cost, events)
 
 #TODO: optimization where valid returns only the synteny locations for the clade UNDER a given gene node
@@ -119,41 +126,34 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
         dynamic programming algorithm are explained in the tech report.
         Cospeciation is assumed to cost 0. """
 
-    A = {}  # A, C, O, and bestSwitch are all defined in tech report
+    A = {}  # A, C, O, and best_switch are all defined in tech report
     C = {}
     O = {}
     eventsDict = {} # Dictionary to keep track of events that correspond to the min cost reconciliation 
-    bestSwitch = {} 
+    best_switch = {} 
     allsynteny=list(locus_map.values())
     # Capture O, R for ease of use
     delta = lambda s1, s2: delta_cost(s1, s2, Origin, R)
     #print("The dimensions is %d by %d by %d by %d"%(len(postorder(parasiteTree, "pTop")),len(Allsynteny), len(Allsynteny),len(postorder(hostTree, "hTop"))))
     for ep in postorder(parasiteTree, "pTop"):
         _,vp,ep1,ep2 = parasiteTree[ep]
-        # is vp a tip?
-        if ep1 == None: # then ep2 == None too and vp is a tip!
-            vpIsATip = True
-        else:
-            vpIsATip = False
+        vp_is_a_tip = check_tip(vp, ep1, ep2)
         #TODO: rename l_bottom
         for l_bottom in allsynteny:  #for start and end vertex of gene edge
             for eh in postorder(hostTree, "hTop"):
                 _,vh,eh1,eh2 = hostTree[eh]
                 eventsDict[(vp, vh, l_bottom)] = []
                 # is vh a tip?
-                if eh1 == None: # then eh2 == None too and vh is a tip!
-                    vhIsATip = True
-                else:
-                    vhIsATip = False
+                vh_is_a_tip = check_tip(vh, eh1, eh2)
                 # Compute A[(ep, eh, l_bottom)]
-                if vhIsATip:
-                    if vpIsATip and phi[vp] == vh and locus_map[vp]==l_bottom:
+                if vh_is_a_tip:
+                    if vp_is_a_tip and phi[vp] == vh and locus_map[vp]==l_bottom:
                         A[(ep, eh, l_bottom)] = (0, [("C", None, None)])
                     else: 
                         A[(ep, eh, l_bottom)] = (Infinity, [])
                 else: # vh is not a tip
                     # Compute cospeciation events
-                    if not vpIsATip:
+                    if not vp_is_a_tip:
                         def get_cospeciations(l1, l2):
                             synteny_cost = delta(l_bottom, l1) + delta(l_bottom, l2)
                             co1 = (synteny_cost + C[(ep1, eh1, l1)][0] + C[(ep2, eh2, l2)][0], \
@@ -177,7 +177,7 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
 
                 # Compute C[(ep, eh,l_top, l_bottom)]
                 # First, compute duplications
-                if not vpIsATip:
+                if not vp_is_a_tip:
                     DUPepeh=Infinity
                     # List to keep track of lowest cost duplication event
                     dupList=[Infinity]
@@ -192,26 +192,26 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                     duplications = (Infinity, [])
                
                 # Compute transfer table
-                if not vpIsATip:
+                if not vp_is_a_tip:
                     switchList = [] # List to keep track of lowest cost switch
                     SWITCHepeh=Infinity
                     #need to find all possible children syntenies
                     def get_transfer(l1, l2):
                         synteny_cost = delta(l_bottom, l1) + delta(l_bottom, l2)
                         # Cost to transfer ep2
-                        ep2_cost, ep2_locations = bestSwitch[(ep2, eh, l2)]
+                        ep2_cost, ep2_locations = best_switch[(ep2, eh, l2)]
                         ep2_switch_cost = T + synteny_cost + C[(ep1, eh, l1)][0] + ep2_cost
                         ep2_switch_events = [("T", (ep1, vh, l1), (ep2, location[1], l2)) for location in \
                                 ep2_locations]
                         ep2_switch = (ep2_switch_cost, ep2_switch_events)
                         # Cost to transfer ep1
-                        ep1_cost, ep1_locations = bestSwitch[(ep1, eh, l1)]
+                        ep1_cost, ep1_locations = best_switch[(ep1, eh, l1)]
                         ep1_switch_cost = T + synteny_cost + C[(ep2, eh, l2)][0] + ep1_cost
                         ep1_switch_events = [("T", (ep2, vh, l2), (ep1, location[1], l1)) for location in \
                                 ep1_locations]
-                        ep1_switch = (ep1_switch_cost, ep_1_switch_events)
+                        ep1_switch = (ep1_switch_cost, ep1_switch_events)
                         return combine_costs([ep2_switch, ep1_switch])
-                    transfer_list = [get_transfer(l1,l2) for l1 in all_synteny for l2 in all_synteny]
+                    transfer_list = [get_transfer(l1,l2) for l1 in allsynteny for l2 in allsynteny]
                     transfers = combine_costs(transfer_list)
                 else:
                     transfers = (Infinity, [])
@@ -222,7 +222,8 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                         combine_costs([A[(ep, eh, l_bottom)], duplications, transfers])
 
                 # Compute O[(ep, eh, l_bottom)]
-                if vhIsATip: 
+                # O is mapping_node -> (cost, [mapping_node])
+                if vh_is_a_tip: 
                     O[(ep, eh, l_bottom)] = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
                 else: 
                     o_c = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
@@ -230,72 +231,74 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                     o_r = (O[(ep, eh2, l_bottom)])
                     O[(ep, eh, l_bottom)] = combine_costs([o_c, o_l, o_r])
 
-            # Compute bestSwitch values
-            bestSwitch[(ep, "hTop", l_bottom)] = (Infinity, [])
+            # Compute best_switch values
+            best_switch[(ep, "hTop", l_bottom)] = (Infinity, [])
             for eh in preorder(hostTree, "hTop"):
                 _, vh, eh1, eh2 = hostTree[eh]
-
-                # is vh a tip?
-                if eh1 == None: # then eh2 == None too and vh is a tip!
-                    vhIsATip = True
-                else:
-                    vhIsATip = False
+                # Is vh a tip?
+                if check_tip(vh, eh1, eh2):
+                    best_switch[(ep, eh, l_bottom)] = (Infinity, [])
                 # Find the best switches and switch locations
-                if eh1 != None and eh2 != None: # not a tip
-                    ep_bestSwitch = bestSwitch[(ep, eh, l_bottom)]
+                else:
+                    ep_best_switch = best_switch[(ep, eh, l_bottom)]
                     O_eh2=O[(ep, eh2, l_bottom)]
                     O_eh1=O[(ep, eh1, l_bottom)]
-                    bestSwitch[(ep, eh1, l_bottom)] = combine_costs([ep_bestSwitch, O_eh2, O_eh1])
+                    best_switch[(ep, eh1, l_bottom)] = combine_costs([ep_best_switch, O_eh2, O_eh1])
+        # Compute the cost of not giving a syntenic location
+        # Impossible for a tip not to get one
+        if vp_is_a_tip:
+            C[(vp, "hTop", "*")] = (Infinity, [])
+        else:
+            def get_single_null(eh, l):
+                # Left child stays null
+                l_map = (ep1, "hTop", "*")
+                r_map = (ep2, eh, l)
+                left_null_cost = C[l_map][0] + C[r_map][0] + Origin
+                left_null_event = ("N", l_map, r_map)
+                left_null = (left_null_cost, [left_null_event])
+                # Right child stays null
+                l_map = (ep1, eh, l)
+                r_map = (ep2, "hTop", "*")
+                right_null_cost = C[l_map][0] + C[r_map][0] + Origin
+                right_null_event = ("N", l_map, r_map)
+                right_null = (right_null_cost, [right_null_event])
+                return combine_costs([left_null, right_null])
+            single_null_list = [get_single_null(eh, l) \
+                    for eh in postorder(hostTree, "hTop") for l in allsynteny]
+            single_null = combine_costs(single_null_list)
 
-        #TODO: what if ep1 or ep2 is None? i.e. a tip
-        def get_single_null(eh, l):
-            # Left child stays null
+            # Neither child gets a synteny
             l_map = (ep1, "hTop", "*")
-            r_map = (ep2, eh, l)
-            left_null_cost = C[l_map][0] + C[r_map][0] + Origin
-            left_null_event = ("N", l_map, r_map)
-            left_null = (left_null_cost, [left_null_event])
-            # Right child stays null
-            l_map = (ep1, eh, l)
             r_map = (ep2, "hTop", "*")
-            right_null_cost = C[l_map][0] + C[r_map][0] + Origin
-            right_null_event = ("N", l_map, r_map)
-            right_null = (right_null_cost, [right_null_event])
-            return combine_costs([left_null, right_null])
-        single_null_list = [get_single_null(eh, l) \
-                for eh in postorder(hostTree, "hTop") for l in allsynteny]
-        single_null = combine_costs(single_child_list)
+            both_null_cost = C[l_map][0] + C[r_map][0]
+            both_null_event = ("N", l_map, r_map)
+            both_null = (both_null_cost, [both_null_event])
 
-        # Neither child gets a synteny
-        l_map = (ep1, "hTop", "*")
-        r_map = (ep2, "hTop", "*")
-        both_null_cost = C[l][0] + C[r][0]
-        both_null_event = ("N", l_map, r_map)
-        both_null = (both_null_cost, [both_null_event])
+            def get_neither_child_null(eh1, l1, eh2, l2):
+                l_map = (ep1, eh1, l1)
+                r_map = (ep2, eh2, l2)
+                neither_null_cost = C[l_map][0] + C[r_map][0] + 2 * Origin
+                neither_null_event = ("N", l_map, r_map)
+                return (neither_null_cost, [neither_null_event])
 
-        def get_neither_child_null(eh1, l1, eh2, l2):
-            l_map = (ep1, eh1, l1)
-            r_map = (ep2, eh2, l2)
-            neither_null_cost = C[l_map][0] + C[r_map][0] + 2 * Origin
-            neither_null_event = ("N", l_map, r_map)
-            return (neither_null_cost, neither_null_event)
+            neither_null_list = [get_neither_child_null(eh1, l1, eh2, l2) \
+                    for eh1 in postorder(hostTree, "hTop") for eh2 in postorder(hostTree, "hTop") \
+                    for l1 in allsynteny for l2 in allsynteny]
+            neither_null = combine_costs(neither_null_list)
 
-        neither_null_list = [get_neither_child_null(eh1, l1, eh2, l2) \
-                for eh1 in postorder(hostTree, "hTop") for eh2 in postorder(hostTree, "hTop") \
-                for l1 in allsynteny for l2 in allsynteny]
-        neither_null = combine_costs(neither_null_list)
+            C[(ep, "hTop", "*")] = combine_costs([single_null, both_null, neither_null])
 
-        C[(g, "hTop", "*")] = combine_costs([single_null, both_null, neither_null])
-
-    # Cost for assigning the root
-    def get_root(eh, l):
-        m = C[("pTop", eh, l)][0]
+    # Cost for assigning the root a syntenic location
+    def get_root_not_null(eh, l):
+        m = C[("pTop", eh, l)]
         return (m[0] + Origin, m[1])
-    root_list = [get_root_not_null(eh, l) for eh in postorder(hostTree, "hTop") for l in allsynteny + ["*"]]
-    min_cost, _ = combine_costs(root_not_null_list)
+    root_not_null_list = [get_root_not_null(eh, l) for eh in postorder(hostTree, "hTop") for l in allsynteny]
+    root_null = C[("pTop", "hTop", "*")]
+    root_list = root_not_null_list + [root_null]
+    min_cost, _ = combine_costs(root_list)
 
     # Find the mapping nodes involving pTop of minimum cost
-    best_roots = [m for m,c in C.items if m[0] == "pTop" and c[0] == min_cost]
+    best_roots = [m for m,c in C.items() if m[0] == "pTop" and c[0] == min_cost]
 
     # This picks a random MPR from the optimal ones
     MPR = find_MPR(best_roots, C)
@@ -316,9 +319,9 @@ def find_MPR_helper(nodes, C, MPR):
     MPR[mapping] = event
     e_type, e_left, e_right = event
     if e_left is not None:
-        _ = findOneMPR([e_left], C, MPR)
+        _ = find_MPR_helper([e_left], C, MPR)
     if e_right is not None:
-        _ = findOneMPR([e_right], C, MPR)
+        _ = find_MPR_helper([e_right], C, MPR)
     return MPR
 
 def MPR_graph(best_roots, C):
@@ -327,7 +330,7 @@ def MPR_graph(best_roots, C):
     """
     return MPR_graph_helper(best_roots, C, {})
 
-def MPR_graph(nodes, C, G):
+def MPR_graph_helper(nodes, C, G):
     """
     Recursively create the entire MPR graph. Does the work for MPR_graph.
     """
@@ -335,8 +338,8 @@ def MPR_graph(nodes, C, G):
         events = c[mapping][1]
         G[mapping] = events
         for e_type, e_left, e_right in events:
-            MPR_graph([e_left], C, G)
-            MPR_graph([e_right], C, G)
+            MPR_graph_helper([e_left], C, G)
+            MPR_graph_helper([e_right], C, G)
     return G
 
 def preorderDTLORsort(DTLOR, ParasiteRoot):

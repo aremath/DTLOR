@@ -1,4 +1,4 @@
-import trees,DTLOR_DP,random
+import trees, DTLOR_DP, random
 
 def reduceLocusMap(geneTree,locusMapD):
     '''Create a new locus map D with only entries for genes in geneTree.'''
@@ -28,17 +28,15 @@ def reconcile(argT):
     for geneTree in allRootingsL:
         geneTreeD=trees.parseTreeForDP(geneTree,parasite=True) # gene tree to right format
         MPR,cost=DTLOR_DP.DP(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
-        #print("Min Cost: {}".format(cost))
-        if cost<best_score: 
-            #if the score is better than current best
-            #update best score, clear record and add new record
+        print("Min Cost: {}".format(cost))
+        if cost < best_score: 
+            # If the score is better than current best
+            # Update best score, clear record and add new record
             best_score=cost
-            bestMPRs=[]
-            bestMPRs.append((geneTree,MPR))
+            bestMPRs=[(geneTree, MPR)]
         elif cost==best_score:
             bestMPRs.append((geneTree,MPR))
 
     #sample one MPR from the MPRs for this specific unrooted tree
-    optRootedGeneTree,optMPR=random.choice(bestMPRs) 
-
+    optRootedGeneTree, optMPR = random.choice(bestMPRs) 
     return optRootedGeneTree,optMPR    
