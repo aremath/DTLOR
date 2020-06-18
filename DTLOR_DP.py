@@ -91,16 +91,25 @@ def combine_costs(events_list):
     cost = Infinity
     events = []
     for c,e in events_list:
+        print("\tCost: {}".format(c))
+        print("\tEvents: {}".format(events))
+        assert type(e) is list, e
+        assert (type(c) is float) or (type(c) is int), (c, e)
+        #print(c, e)
         if cost > c:
             cost = c
             events = e
         elif cost == c:
             events.extend(e)
+    print("Events: {}".format(events))
     return (cost, events)
 
 #TODO: optimization where valid returns only the synteny locations for the clade UNDER a given gene node
 #TODO: delta no longer needs to use * since null counts origins separately...?
 #TODO: iterable rather than actually creating lists
+#TODO: Refactor other code to reflect the tree representation change:
+# ("C", None, None) versus ("C", (None, None, None, None), (None, None, None, None))
+# and ("L", (...), None) versus ("L", (...), (None, None, None, None)
 
 def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
     """ Takes a hostTree, parasiteTree, tip mapping function phi, a locus_map, 
@@ -110,7 +119,6 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
         dynamic programming algorithm are explained in the tech report.
         Cospeciation is assumed to cost 0. """
 
-    null = {}
     A = {}  # A, C, O, and bestSwitch are all defined in tech report
     C = {}
     O = {}
@@ -128,7 +136,6 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
         else:
             vpIsATip = False
         #TODO: rename l_bottom
-        #TODO: ensure allsynteny does not contain *
         for l_bottom in allsynteny:  #for start and end vertex of gene edge
             for eh in postorder(hostTree, "hTop"):
                 _,vh,eh1,eh2 = hostTree[eh]
@@ -141,18 +148,18 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 # Compute A[(ep, eh, l_bottom)]
                 if vhIsATip:
                     if vpIsATip and phi[vp] == vh and locus_map[vp]==l_bottom:
-                        A[(ep, eh, l_bottom)] = (0, [("C", (None, None, None, None), (None, None, None, None))])
+                        A[(ep, eh, l_bottom)] = (0, [("C", None, None)])
                     else: 
-                        A[(ep, eh, top_is_star, l_bottom)] = (Infinity, [])
+                        A[(ep, eh, l_bottom)] = (Infinity, [])
                 else: # vh is not a tip
                     # Compute cospeciation events
                     if not vpIsATip:
                         def get_cospeciations(l1, l2):
                             synteny_cost = delta(l_bottom, l1) + delta(l_bottom, l2)
-                            co1=(synteny_cost + C[(ep1, eh1, l1)][0] + C[(ep2, eh2, l2)][0], \
-                                    ("S", (ep1, eh1, l1), (ep2, eh2, l2)))
-                            co2=(synteny_cost + C[(ep1, eh2, l1)][0] + C[(ep2, eh1, l2)][0], \
-                                    ("S", (ep1, eh2, l1), (ep2, eh1, l2)))
+                            co1 = (synteny_cost + C[(ep1, eh1, l1)][0] + C[(ep2, eh2, l2)][0], \
+                                    [("S", (ep1, eh1, l1), (ep2, eh2, l2))])
+                            co2 = (synteny_cost + C[(ep1, eh2, l1)][0] + C[(ep2, eh1, l2)][0], \
+                                    [("S", (ep1, eh2, l1), (ep2, eh1, l2))])
                             return combine_costs([co1, co2])
                         cospeciation_list = [get_cospeciations(l1, l2) for l1 in allsynteny for l2 in allsynteny]
                         cospeciations = combine_costs(cospeciation_list)
@@ -160,9 +167,9 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                         cospeciations = (Infinity, [])
                     # Compute loss events
                     # eh1 is the branch where ep is lost
-                    loss_eh1 = (C[(ep, eh2, l_bottom)][0] + L, ("L", (vp, eh2, l_bottom), (None, None, None, None)))
+                    loss_eh1 = (C[(ep, eh2, l_bottom)][0] + L, [("L", (vp, eh2, l_bottom), None)])
                     # eh2 is the branch where ep is lost
-                    loss_eh2 = (C[(ep, eh1, l_bottom)][0] + L, ("L", (vp, eh1, l_bottom), (None, None, None, None)))
+                    loss_eh2 = (C[(ep, eh1, l_bottom)][0] + L, [("L", (vp, eh1, l_bottom), None)])
                     losses = combine_costs([loss_eh1, loss_eh2])
 
                     # Determine which event occurs for A[(ep, eh, l_bottom)] 
@@ -184,8 +191,7 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 else:
                     duplications = (Infinity, [])
                
-                #   Next, Compute T and create event list to add 
-                #   to eventsDict using bestSwitchLocations
+                # Compute transfer table
                 if not vpIsATip:
                     switchList = [] # List to keep track of lowest cost switch
                     SWITCHepeh=Infinity
@@ -220,13 +226,12 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                     O[(ep, eh, l_bottom)] = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
                 else: 
                     o_c = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
-                    o_l = (O[(ep, eh1, l_bottom)], [(vp, eh1, l_bottom)])
-                    o_r = (O[(ep, eh2, l_bottom)], [(vp, eh2, l_bottom)])
+                    o_l = (O[(ep, eh1, l_bottom)])
+                    o_r = (O[(ep, eh2, l_bottom)])
                     O[(ep, eh, l_bottom)] = combine_costs([o_c, o_l, o_r])
 
             # Compute bestSwitch values
-            bestSwitch[(ep, "hTop", l_bottom)] = Infinity
-            bestSwitchLocations[(vp, hostTree["hTop"][1], l_bottom)] = [(None,None, None, None)]
+            bestSwitch[(ep, "hTop", l_bottom)] = (Infinity, [])
             for eh in preorder(hostTree, "hTop"):
                 _, vh, eh1, eh2 = hostTree[eh]
 
@@ -238,29 +243,34 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 # Find the best switches and switch locations
                 if eh1 != None and eh2 != None: # not a tip
                     ep_bestSwitch = bestSwitch[(ep, eh, l_bottom)]
-                    O_eh2=O[(ep, eh2, top_is_star, l_bottom)]
-                    O_eh1=O[(ep, eh1, top_is_star, l_bottom)]
-                    #TODO what about [(None, None, None None)]?
+                    O_eh2=O[(ep, eh2, l_bottom)]
+                    O_eh1=O[(ep, eh1, l_bottom)]
                     bestSwitch[(ep, eh1, l_bottom)] = combine_costs([ep_bestSwitch, O_eh2, O_eh1])
-        #TODO: Combine
-        #TODO: Events
+
+        #TODO: what if ep1 or ep2 is None? i.e. a tip
         def get_single_null(eh, l):
             # Left child stays null
-            left_null_cost = null[ep1] + C[(ep2, eh, l)][0] + Origin
-            left_null_event = ("N", (ep1, "pTop", "*"), (ep2, eh, l))
+            l_map = (ep1, "hTop", "*")
+            r_map = (ep2, eh, l)
+            left_null_cost = C[l_map][0] + C[r_map][0] + Origin
+            left_null_event = ("N", l_map, r_map)
             left_null = (left_null_cost, [left_null_event])
             # Right child stays null
-            right_null_cost = null[ep2] + C[(ep1, eh, l)][0] + Origin
-            right_null_event = ("N", (ep1, eh, l), (ep2, "pTop", "*"))
+            l_map = (ep1, eh, l)
+            r_map = (ep2, "hTop", "*")
+            right_null_cost = C[l_map][0] + C[r_map][0] + Origin
+            right_null_event = ("N", l_map, r_map)
             right_null = (right_null_cost, [right_null_event])
             return combine_costs([left_null, right_null])
         single_null_list = [get_single_null(eh, l) \
-                for eh in postOrder(hostTree, "hTop") for l in allysnteny]
+                for eh in postorder(hostTree, "hTop") for l in allsynteny]
         single_null = combine_costs(single_child_list)
 
         # Neither child gets a synteny
-        both_null_cost = null[ep1][0] + null[ep2][0]
-        both_null_event = ("N", (ep1, "hTop", "*"), (ep2, "hTop", "*"))
+        l_map = (ep1, "hTop", "*")
+        r_map = (ep2, "hTop", "*")
+        both_null_cost = C[l][0] + C[r][0]
+        both_null_event = ("N", l_map, r_map)
         both_null = (both_null_cost, [both_null_event])
 
         def get_neither_child_null(eh1, l1, eh2, l2):
@@ -275,34 +285,59 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 for l1 in allsynteny for l2 in allsynteny]
         neither_null = combine_costs(neither_null_list)
 
-        null[g] = combine_costs([single_null, both_null, neither_null])
+        C[(g, "hTop", "*")] = combine_costs([single_null, both_null, neither_null])
 
-    # Cost for assigning the root to a syntenic location
-    def get_root_not_null(eh, l):
+    # Cost for assigning the root
+    def get_root(eh, l):
         m = C[("pTop", eh, l)][0]
         return (m[0] + Origin, m[1])
-    root_not_null_list = [get_root_not_null(eh, l) for eh in postorder(hostTree, "hTop") for l in allsynteny]
-    root_not_null = combine_costs(root_not_null_list)
+    root_list = [get_root_not_null(eh, l) for eh in postorder(hostTree, "hTop") for l in allsynteny + ["*"]]
+    min_cost, _ = combine_costs(root_not_null_list)
 
-    # These roots are the event nodes involving root with minimum cost
-    min_cost, min_roots = combine_costs([null["pTop"], root_not_null])
-    #TODO: how to find the best roots? (mapping nodes involving pTop with minimum cost)
-    bestRoots = 
+    # Find the mapping nodes involving pTop of minimum cost
+    best_roots = [m for m,c in C.items if m[0] == "pTop" and c[0] == min_cost]
 
-    #TODO: how to do the rest?
-    return min_cost
-
-    for key in bestSwitchLocations:
-        if bestSwitchLocations[key][0] == (None, None, None, None):
-            bestSwitchLocations[key] = bestSwitchLocations[key][1:]
-
-    # Use findPath and findBestRoots to construct the DTLOR graph dictionary
-    #this finds the optimal solutions (mappings)
-    treeMin, min_cost = findBestRoots(parasiteTree, Minimums)
-    #This picks a random MPR from the optimal ones
-    MPR = findOneMPR(treeMin, eventsDict, {})  
+    # This picks a random MPR from the optimal ones
+    MPR = find_MPR(best_roots, C)
     return MPR, min_cost
 
+def find_MPR(best_roots, C):
+    """
+    Find a single MPR for the given C dict and best_roots.
+    """
+    return find_MPR_helper(best_roots, C, {})
+
+def find_MPR_helper(nodes, C, MPR):
+    """
+    Recursively find a single MPR using C. Does the work for find_MPR.
+    """
+    mapping = choice(nodes)
+    event = choice(C[mapping][1])
+    MPR[mapping] = event
+    e_type, e_left, e_right = event
+    if e_left is not None:
+        _ = findOneMPR([e_left], C, MPR)
+    if e_right is not None:
+        _ = findOneMPR([e_right], C, MPR)
+    return MPR
+
+def MPR_graph(best_roots, C):
+    """
+    Find the MPR graph for a given C dict and best_roots.
+    """
+    return MPR_graph_helper(best_roots, C, {})
+
+def MPR_graph(nodes, C, G):
+    """
+    Recursively create the entire MPR graph. Does the work for MPR_graph.
+    """
+    for mapping in nodes:
+        events = c[mapping][1]
+        G[mapping] = events
+        for e_type, e_left, e_right in events:
+            MPR_graph([e_left], C, G)
+            MPR_graph([e_right], C, G)
+    return G
 
 def preorderDTLORsort(DTLOR, ParasiteRoot):
     """This takes in a DTL reconciliation graph and parasite root and returns 
@@ -331,6 +366,7 @@ def addScores(treeMin, DTLORDict, ScoreDict):
     ParasiteRoot=treeMin[0][0]
     preOrder = preorderDTLORsort(DTLORDict, ParasiteRoot)
     for root in preOrder:
+        #TODO: when would this be true?
         if root != (None, None): #format (key, level)
             vertices = root[0] #format (vp, vh, l, l)
             if root[1] == 0:
@@ -339,12 +375,12 @@ def addScores(treeMin, DTLORDict, ScoreDict):
                 _,child1,child2,oldScore = DTLORDict[vertices][n]
                 newDTLOR[vertices][n][3] = parentsDict[vertices] * \
                 (1.0 * oldScore / ScoreDict[vertices])
-                if child1!= (None, None, None, None):
+                if child1 is not None:
                     if child1 in parentsDict:
                         parentsDict[child1] += newDTLOR[vertices][n][3]
                     else: 
                         parentsDict[child1] = newDTLOR[vertices][n][3] 
-                if child2!=(None, None, None, None):
+                if child2 is not None:
                     if child2 in parentsDict:
                         parentsDict[child2] += newDTLOR[vertices][n][3]
                     else: 
@@ -355,53 +391,4 @@ def addScores(treeMin, DTLORDict, ScoreDict):
             event[-1] = event[-1]/normalize
     
     return newDTLOR, normalize
-
-def findBestRoots(Parasite, MinimumDict):
-    """Takes Parasite Tree and a dictionary of minimum reconciliation costs
-    and returns a list of the minimum cost reconciliation tree roots and the associated minimum cost"""
-    treeTops = []
-    for key in MinimumDict:
-        #pick out the set of keys in C (MinimumDict) that correspond to mapping 
-        #the root of parasite to any place in host tree
-        #and any locus combinations
-        if key[0] == Parasite['pTop'][1]:
-            treeTops.append(key)
-    treeMin = []
-    min_cost=min([MinimumDict[root] for root in treeTops])
-    for pair in treeTops:
-        #pick out the set of keys that gives the minimum of C (cost of optimal solution)
-        #note there might be multiple equally optimal mappings
-        if MinimumDict[pair] == min_cost:
-            treeMin.append(pair)
-    return treeMin,min_cost
-
-def findPath(tupleList, eventDict, uniqueDict):
-    """Takes as input tupleList, a list of minimum reconciliation cost mappings 
-     of the form (vp, vh, l_top, l_bottom), eventDict, the dictionary of events and 
-     children for each node, and uniqueDict, the dictionary of unique vertex mappings. 
-     This returns the completed DTL graph as a Dictionary"""
-     #findPath(treeMin, eventsDict, {})
-    for mapping in tupleList:
-        if not mapping in uniqueDict:
-            uniqueDict[mapping] = eventDict[mapping]
-        for event in eventDict[mapping][:-1]:
-            for location in event:
-                if type(location) is tuple and location != (None, None, None, None):
-                    findPath([location], eventDict, uniqueDict)
-    return uniqueDict
-
-def findOneMPR(tupleList, eventDict, MPR):
-    """
-    Takes as input tupleList, a list of minimum reconciliation cost mappings 
-     of the form (vp, vh, l_top, l_bottom), eventDict, the dictionary of events and 
-     children for each node, and a dictionary to record one MPR, which is returned. 
-    """
-    mapping = choice(tupleList)
-    event = choice(eventDict[mapping])  #randomly pick an event
-    #print(event)
-    MPR[mapping]=event  
-    for location in event: #there should be eventType,and two child mapping nodes
-        if type(location) is tuple and location != (None, None, None, None):
-            findOneMPR([location], eventDict, MPR)
-    return MPR
 
