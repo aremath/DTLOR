@@ -9,10 +9,13 @@
 # (start vertex, end vertex, left child edge name, right child edge name)
 # An edge name may be None.  The "dummy" edge leading to the root of the
 # parasite tree, denoted e^P in the technical report, must be named "pTop".
+
 # Edited by Annalise Schweickart and Carter Slocum, July 2015 to return
 # the DTL reconciliation graph that uses frequency scoring, as well as the
 # number of reconciliations of the host and parasite trees
-# Edited by Ross Mawhorter in 2020 to reduce the running time per Rose Liu's formulation.
+
+# Modified by Ross Mawhorter in 2020 to reduce the running time per Rose Liu's formulation
+# and apply the new model of how DTLOR should work.
 
 # import newickFormatReader
 from Greedy import *
