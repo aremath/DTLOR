@@ -223,16 +223,20 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 # to the dictionary eventsDict
                 C[(ep, eh, l_bottom)] = \
                         combine_costs([A[(ep, eh, l_bottom)], duplications, transfers])
+                # The root must factor in the cost of getting a syntenic location
+                if ep == "pTop":
+                    old = C[(ep, eh, l_bottom)]
+                    C[(ep, eh, l_bottom)] = (old[0] + Origin, old[1])
 
                 # Compute O[(ep, eh, l_bottom)]
                 # O is mapping_node -> (cost, [mapping_node])
                 if vh_is_a_tip: 
                     O[(ep, eh, l_bottom)] = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
                 else: 
-                    o_c = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
-                    o_l = (O[(ep, eh1, l_bottom)])
-                    o_r = (O[(ep, eh2, l_bottom)])
-                    O[(ep, eh, l_bottom)] = combine_costs([o_c, o_l, o_r])
+                    O_c = (C[(ep, eh, l_bottom)][0], [(vp, vh, l_bottom)])
+                    O_eh1 = (O[(ep, eh1, l_bottom)])
+                    O_eh2 = (O[(ep, eh2, l_bottom)])
+                    O[(ep, eh, l_bottom)] = combine_costs([O_c, O_eh1, O_eh2])
 
             # Compute best_switch values
             best_switch[(ep, "hTop", l_bottom)] = (Infinity, [])
@@ -246,9 +250,10 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                     ep_best_switch = best_switch[(ep, eh, l_bottom)]
                     O_eh2=O[(ep, eh2, l_bottom)]
                     O_eh1=O[(ep, eh1, l_bottom)]
-                    best_switch[(ep, eh1, l_bottom)] = combine_costs([ep_best_switch, O_eh2, O_eh1])
+                    best_switch[(ep, eh1, l_bottom)] = combine_costs([ep_best_switch, O_eh2])
+                    best_switch[(ep, eh2, l_bottom)] = combine_costs([ep_best_switch, O_eh1])
         # Compute the cost of not giving a syntenic location
-        # Impossible for a tip not to get one
+        # Tip must have a syntenic location
         if vp_is_a_tip:
             C[(vp, "hTop", "*")] = (Infinity, [])
         else:
@@ -292,13 +297,11 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
             C[(ep, "hTop", "*")] = combine_costs([single_null, both_null, neither_null])
 
     # Cost for assigning the root a syntenic location
-    def get_root_not_null(eh, l):
-        m = C[("pTop", eh, l)]
-        return (m[0] + Origin, m[1])
-    root_not_null_list = [get_root_not_null(eh, l) for eh in postorder(hostTree, "hTop") for l in allsynteny]
+    root_not_null_list = [C[("pTop", eh, l)] for eh in postorder(hostTree, "hTop") for l in allsynteny]
+    # Cost for not assigning a syntenic location
     root_null = C[("pTop", "hTop", "*")]
     root_list = root_not_null_list + [root_null]
-    min_cost, _ = combine_costs(root_list)
+    min_cost, mins = combine_costs(root_list)
 
     # Find the mapping nodes involving pTop of minimum cost
     best_roots = [m for m,c in C.items() if m[0] == "pTop" and c[0] == min_cost]
