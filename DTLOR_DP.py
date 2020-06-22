@@ -111,8 +111,8 @@ def find_min_events(events_list):
     for c,e in events_list:
         if cost > c:
             cost = c
-            events = e
-        elif cost == c:
+            events = []
+        if cost == c:
             events.extend(e)
     return (cost, events)
 
@@ -138,8 +138,8 @@ def find_min_events_alt(elements, cost_computer, event_computer):
     for element, cost in zip(elements, costs):
         if cost < min_cost:
             min_cost = c
-            min_events = event_computer(*element)
-        elif cost == min_cost:
+            min_events = []
+        if cost == min_cost:
             min_events.extend(event_computer(*element))
     return (min_cost, min_events)
 
@@ -158,9 +158,9 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
     A = {}  # A, C, O, and best_switch are all defined in tech report
     C = {}
     O = {}
-    eventsDict = {} # Dictionary to keep track of events that correspond to the min cost reconciliation 
-    best_switch = {} 
-    allsynteny=list(locus_map.values())
+    best_switch = {}
+    # All available syntenic locations
+    allsynteny = set(locus_map.values())
     # Capture R for ease of use - it never changes
     delta = lambda s1, s2: delta_r(s1, s2, R)
     #print("The dimensions is %d by %d by %d by %d"%(len(postorder(parasiteTree, "pTop")),len(Allsynteny), len(Allsynteny),len(postorder(hostTree, "hTop"))))
@@ -170,7 +170,6 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
         for lp in allsynteny:  # The location of ep at the bottom of the branch above ep
             for eh in postorder(hostTree, "hTop"):
                 _,vh,eh1,eh2 = hostTree[eh]
-                eventsDict[(vp, vh, lp)] = []
                 vh_is_a_tip = check_tip(vh, eh1, eh2)
                 # Compute A[(ep, eh, lp)]
                 if vh_is_a_tip:
@@ -244,8 +243,7 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 else:
                     transfers = (Infinity, [])
 
-                # Compute C[(ep, eh, l_top, lp)] and add the event or events with that cost
-                # to the dictionary eventsDict
+                # Compute C[(ep, eh, l_top, lp)] and the associated events
                 C[(ep, eh, lp)] = \
                         find_min_events([A[(ep, eh, lp)], duplications, transfers])
                 # The root must factor in the cost of getting a syntenic location
@@ -331,6 +329,7 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
 
     # This picks a random MPR from the optimal ones
     MPR = find_MPR(best_roots, C)
+    #G = MPR_graph(best_roots, C)
     return MPR, min_cost
 
 def find_MPR(best_roots, C):
@@ -364,11 +363,13 @@ def MPR_graph_helper(nodes, C, G):
     Recursively create the entire MPR graph. Does the work for MPR_graph.
     """
     for mapping in nodes:
-        events = c[mapping][1]
+        events = C[mapping][1]
         G[mapping] = events
         for e_type, e_left, e_right in events:
-            MPR_graph_helper([e_left], C, G)
-            MPR_graph_helper([e_right], C, G)
+            if e_left is not None:
+                MPR_graph_helper([e_left], C, G)
+            if e_right is not None:
+                MPR_graph_helper([e_right], C, G)
     return G
 
 def preorderDTLORsort(DTLOR, ParasiteRoot):

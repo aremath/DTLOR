@@ -39,4 +39,4 @@ def reconcile(argT):
 
     #sample one MPR from the MPRs for this specific unrooted tree
     optRootedGeneTree, optMPR = random.choice(bestMPRs) 
-    return optRootedGeneTree,optMPR    
+    return optRootedGeneTree,optMPR
