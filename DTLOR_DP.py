@@ -7,8 +7,7 @@
 # A tree is represented as a dictionary of key-value pairs where a key is an
 # edge name and the value is a tuple of the form
 # (start vertex, end vertex, left child edge name, right child edge name)
-# An edge name may be None.  The "dummy" edge leading to the root of the
-# parasite tree, denoted e^P in the technical report, must be named "pTop".
+# An edge name may be None.
 
 # Edited by Annalise Schweickart and Carter Slocum, July 2015 to return
 # the DTL reconciliation graph that uses frequency scoring, as well as the
@@ -59,6 +58,30 @@ def delta_r(synteny1, synteny2, R):
         return R
 
 Infinity = float('inf')
+
+def nodes_preorder(tree, root_edge_name):
+    """
+    Preorder traversal of the /nodes/ of a tree
+    """
+    top, bottom, left_child, right_child = tree[root_edge_name]
+    if left_child is None and right_child is None:
+        return [bottom]
+    elif left_child is not None and right_child is not None:
+        return [bottom] + preorder(tree, left_child) + preorder(tree, right_child)
+    else:
+        assert False, "Tree with invalid edge: {}".format(root_edge_name)
+
+def nodes_postorder(tree, root_edge_name):
+    """
+    Postorder traversal of the /nodes/ of a tree
+    """
+    top, bottom, left_child, right_child = tree[root_edge_name]
+    if left_child is None and right_child is None:
+        return [bottom]
+    elif left_child is not None and right_child is not None:
+        return preorder(tree, left_child) + preorder(tree, right_child) + [bottom]
+    else:
+        assert False, "Tree with invalid edge: {}".format(root_edge_name)
 
 def preorder(tree, rootEdgeName):
     """ Takes a tree as input (see format description above) and returns a 
@@ -148,8 +171,8 @@ def find_min_events_alt(elements, cost_computer, event_computer):
 # ("C", None, None) versus ("C", (None, None, None, None), (None, None, None, None))
 # and ("L", (...), None) versus ("L", (...), (None, None, None, None)
 
-def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
-    """ Takes a hostTree, parasiteTree, tip mapping function phi, a locus_map, 
+def DP(host_tree, parasite_tree, phi, locus_map, D, T, L, Origin, R):
+    """ Takes a host_tree, parasite_tree, tip mapping function phi, a locus_map, 
         and duplication cost (D), transfer cost (T), loss cost (L), 
         origin cost (O) and rearrange cost(R) and returns the an MPR as a dict.
         The notation and dynamic programming algorithm are explained in the tech report.
@@ -163,13 +186,17 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
     allsynteny = set(locus_map.values())
     # Capture R for ease of use - it never changes
     delta = lambda s1, s2: delta_r(s1, s2, R)
-    #print("The dimensions is %d by %d by %d by %d"%(len(postorder(parasiteTree, "pTop")),len(Allsynteny), len(Allsynteny),len(postorder(hostTree, "hTop"))))
-    for ep in postorder(parasiteTree, "pTop"):
-        _,vp,ep1,ep2 = parasiteTree[ep]
+    parasite_root = next(iter(parasite_tree))
+    host_root = next(iter(host_tree))
+    #print(host_tree)
+    #print("The dimensions is %d by %d by %d by %d"%(len(postorder(parasite_tree, parasite_root)),len(Allsynteny), len(Allsynteny),len(postorder(host_tree, host_root))))
+    for ep in postorder(parasite_tree, parasite_root):
+        _,vp,ep1,ep2 = parasite_tree[ep]
         vp_is_a_tip = check_tip(vp, ep1, ep2)
         for lp in allsynteny:  # The location of ep at the bottom of the branch above ep
-            for eh in postorder(hostTree, "hTop"):
-                _,vh,eh1,eh2 = hostTree[eh]
+            for eh in postorder(host_tree, host_root):
+                #print(ep, lp, eh)
+                _,vh,eh1,eh2 = host_tree[eh]
                 vh_is_a_tip = check_tip(vh, eh1, eh2)
                 # Compute A[(ep, eh, lp)]
                 if vh_is_a_tip:
@@ -247,7 +274,7 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 C[(ep, eh, lp)] = \
                         find_min_events([A[(ep, eh, lp)], duplications, transfers])
                 # The root must factor in the cost of getting a syntenic location
-                if ep == "pTop":
+                if ep == parasite_root:
                     old = C[(ep, eh, lp)]
                     C[(ep, eh, lp)] = (old[0] + Origin, old[1])
 
@@ -262,9 +289,9 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                     O[(ep, eh, lp)] = find_min_events([O_c, O_eh1, O_eh2])
 
             # Compute best_switch values for the children
-            best_switch[(ep, "hTop", lp)] = (Infinity, [])
-            for eh in preorder(hostTree, "hTop"):
-                _, vh, eh1, eh2 = hostTree[eh]
+            best_switch[(ep, host_root, lp)] = (Infinity, [])
+            for eh in preorder(host_tree, host_root):
+                _, vh, eh1, eh2 = host_tree[eh]
                 # Find the best switches and switch locations for the children of vh
                 # Don't set best_switch for nonexistent children
                 if not check_tip(vh, eh1, eh2):
@@ -276,29 +303,29 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
         # Compute the cost of not giving a syntenic location
         # Tip must have a syntenic location
         if vp_is_a_tip:
-            C[(vp, "hTop", "*")] = (Infinity, [])
+            C[(vp, host_root, "*")] = (Infinity, [])
         else:
             def get_single_null(eh, l):
                 # Left child stays null
-                l_map = (ep1, "hTop", "*")
+                l_map = (ep1, host_root, "*")
                 r_map = (ep2, eh, l)
                 left_null_cost = C[l_map][0] + C[r_map][0] + Origin
                 left_null_event = ("N", l_map, r_map)
                 left_null = (left_null_cost, [left_null_event])
                 # Right child stays null
                 l_map = (ep1, eh, l)
-                r_map = (ep2, "hTop", "*")
+                r_map = (ep2, host_root, "*")
                 right_null_cost = C[l_map][0] + C[r_map][0] + Origin
                 right_null_event = ("N", l_map, r_map)
                 right_null = (right_null_cost, [right_null_event])
                 return find_min_events([left_null, right_null])
             single_null_list = [get_single_null(eh, l) \
-                    for eh in postorder(hostTree, "hTop") for l in allsynteny]
+                    for eh in postorder(host_tree, host_root) for l in allsynteny]
             single_null = find_min_events(single_null_list)
 
             # Neither child gets a synteny
-            l_map = (ep1, "hTop", "*")
-            r_map = (ep2, "hTop", "*")
+            l_map = (ep1, host_root, "*")
+            r_map = (ep2, host_root, "*")
             both_null_cost = C[l_map][0] + C[r_map][0]
             both_null_event = ("N", l_map, r_map)
             both_null = (both_null_cost, [both_null_event])
@@ -311,21 +338,21 @@ def DP(hostTree, parasiteTree, phi, locus_map, D, T, L, Origin, R):
                 return (neither_null_cost, [neither_null_event])
 
             neither_null_list = [get_neither_child_null(eh1, l1, eh2, l2) \
-                    for eh1 in postorder(hostTree, "hTop") for eh2 in postorder(hostTree, "hTop") \
+                    for eh1 in postorder(host_tree, host_root) for eh2 in postorder(host_tree, host_root) \
                     for l1 in allsynteny for l2 in allsynteny]
             neither_null = find_min_events(neither_null_list)
 
-            C[(ep, "hTop", "*")] = find_min_events([single_null, both_null, neither_null])
+            C[(ep, host_root, "*")] = find_min_events([single_null, both_null, neither_null])
 
     # Cost for assigning the root a syntenic location
-    root_not_null_list = [C[("pTop", eh, l)] for eh in postorder(hostTree, "hTop") for l in allsynteny]
+    root_not_null_list = [C[(parasite_root, eh, l)] for eh in postorder(host_tree, host_root) for l in allsynteny]
     # Cost for not assigning a syntenic location
-    root_null = C[("pTop", "hTop", "*")]
+    root_null = C[(parasite_root, host_root, "*")]
     root_list = root_not_null_list + [root_null]
     min_cost, _ = find_min_events(root_list)
 
-    # Find the mapping nodes involving pTop of minimum cost
-    best_roots = [m for m,c in C.items() if m[0] == "pTop" and c[0] == min_cost]
+    # Find the mapping nodes involving the root of minimum cost
+    best_roots = [m for m,c in C.items() if m[0] == parasite_root and c[0] == min_cost]
 
     # This picks a random MPR from the optimal ones
     MPR = find_MPR(best_roots, C)
