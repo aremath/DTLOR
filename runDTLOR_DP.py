@@ -28,6 +28,7 @@ def loadD(fn):
     return D
 
 ## main
+#TODO: proper CLI
 
 if __name__ == "__main__":
 
