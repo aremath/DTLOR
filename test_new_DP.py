@@ -11,5 +11,7 @@ args = (speciesTree, geneTree, tipMapD, gtLocusMapD, locusMapForRootingD, D, T, 
 speciesTreeD = trees.parseTreeForDP(speciesTree, parasite=False)
 for genetree in trees.get_all_rerootings(geneTree, locusMapForRootingD):
     geneTreeD = trees.parseTreeForDP(geneTree, parasite=True)
-    print(new_DTLOR_DP.DP(speciesTreeD, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R))
+    cost, G = new_DTLOR_DP.DP(speciesTreeD, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+    print(cost)
+    print(G)
 
