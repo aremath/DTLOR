@@ -1,6 +1,7 @@
 from collections import defaultdict
 from enum import Enum, auto
 from itertools import product
+from functools import reduce
 from DTLOR_DP import check_tip, preorder, postorder, delta_r, find_min_events
 
 Infinity = float("inf")
@@ -35,8 +36,9 @@ class NodeType(Enum):
     SPECIES_MAPPING = (auto(), GraphType.CHOOSE)
     # When a gene gets a true location
     ORIGIN = (auto(), GraphType.ALL)
+    #TODO
     # Should not have children
-    CONTEMPORANEOUS = (auto(), None)
+    #CONTEMPORANEOUS = (auto(), None)
     # "Root" event for choosing the syntenic location of the root
     ROOT = (auto(), GraphType.CHOOSE)
     def __init__(self, e_id, graph_type):
@@ -131,8 +133,7 @@ def DTL_reconcile(host_tree, parasite_tree, phi, D, T, L):
             # Compute A
             if vh_is_a_tip:
                 if vp_is_a_tip and phi[ep] == eh:
-                    e = (NodeType.CONTEMPORANEOUS, None, None)
-                    A[ep_eh_m] = (0, [e])
+                    A[ep_eh_m] = (0, [])
                 else:
                     A[ep_eh_m] = (Infinity, [])
             else:
@@ -276,13 +277,14 @@ def prune_graph(G):
     Removes the unnecessary nodes from G.
     """
     new_G = {}
-    extant_nodes = [(NodeType.ROOT,)]
+    # Use a set to prevent reprocessing
+    extant_nodes = set([(NodeType.ROOT,)])
     while len(extant_nodes) != 0:
         node = extant_nodes.pop()
         if node[0].graph_type is not None:
             children = G[node]
             new_G[node] = children
-            extant_nodes.extend(children)
+            extant_nodes |= set(children)
     return new_G
 
 def find_MPR(G, MPR, rand=False):
@@ -306,3 +308,51 @@ def find_MPR(G, MPR, rand=False):
         else:
             assert False, "Bad GraphType"
     return MPR
+
+#TODO: should children be stored as a set anyways?
+def graph_search_order(G):
+    """
+    Iterator over the nodes of G in BFS order (parents before children)
+    """
+    extant_nodes = set([(NodeType.ROOT,)])
+    while len(extant_nodes) != 0:
+        node = extant_nodes.pop()
+        node_children = G[node]
+        extant_nodes |= set(node_children)
+        yield node
+
+#TODO: should Nodes be objects?
+def count_MPRs(G):
+    counts = {}
+    postorder = list(graph_search_order(G))[::-1]
+    for node in postorder:
+        children = G[node]
+        # Base case: nodes with no children
+        if len(children) == 0:
+            counts[node] = 1
+        else:
+            child_counts = [counts[child] for child in children]
+            # All means multiply
+            if node[0].graph_type is GraphType.ALL:
+                counts[node] = reduce(lambda x, y: x * y, child_counts)
+            # Choose means add
+            elif node[0].graph_type is GraphType.CHOOSE:
+                counts[node] = sum(child_counts)
+    return counts
+
+def event_frequencies(G, counts):
+    frequencies = defaultdict(int)
+    for node in graph_search_order(G):
+        if node[0] is NodeType.ROOT:
+            frequencies[node] = counts[node]
+        # Now compute the frequencies for this node's children
+        children = G[node]
+        multiplier = frequencies[node] / counts[node]
+        for child in children:
+            # All passes the frequency along
+            if node[0].graph_type is GraphType.ALL:
+                frequencies[child] += frequencies[node]
+            # Choose divides the frequency according to the relative proportion of the count
+            elif node[0].graph_type is GraphType.CHOOSE:
+                frequencies[child] += multiplier * counts[child]
+    return frequencies

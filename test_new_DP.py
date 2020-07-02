@@ -14,4 +14,7 @@ for genetree in trees.get_all_rerootings(geneTree, locusMapForRootingD):
     cost, G = new_DTLOR_DP.DP(speciesTreeD, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
     print(cost)
     print(G)
+    c = new_DTLOR_DP.count_MPRs(G)
+    print(c[(new_DTLOR_DP.NodeType.ROOT,)])
+    f = new_DTLOR_DP.event_frequencies(G, c)
 
