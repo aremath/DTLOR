@@ -34,13 +34,14 @@ class NodeType(Enum):
     SPECIES_LIST = (auto(), GraphType.CHOOSE)
     # Maps gene tree node to species tree node
     SPECIES_MAPPING = (auto(), GraphType.CHOOSE)
-    # When a gene gets a true location
+    # When a gene gets a true location (which location is yet unknown)
     ORIGIN = (auto(), GraphType.ALL)
-    #TODO
-    # Should not have children
-    #CONTEMPORANEOUS = (auto(), None)
     # "Root" event for choosing the syntenic location of the root
     ROOT = (auto(), GraphType.CHOOSE)
+    # Event node that represents a change from one syntenic location to another
+    REARRANGEMENT = (auto(), GraphType.ALL)
+    # Event node that represents the origin of an actual syntenic location
+    ORIGIN_EVENT = (auto(), GraphType.ALL)
     def __init__(self, e_id, graph_type):
         self._e_id = e_id
         self.graph_type = graph_type
@@ -356,3 +357,105 @@ def event_frequencies(G, counts):
             elif node[0].graph_type is GraphType.CHOOSE:
                 frequencies[child] += multiplier * counts[child]
     return frequencies
+
+def median_subgraph(G, frequencies):
+    """
+    Compute the medians by maximizing the sum of the (pre-adjusted) frequencies
+    """
+    median_graph = {}
+    freq_sums = {}
+    postorder = list(graph_search_order(G))[::-1]
+    for node in postorder:
+        children = G[node]
+        if len(children) == 0:
+            freq_sums[node] = frequencies[node]
+            median_graph[node] = []
+        else:
+            # Choose the score from the best child
+            if node[0] is GraphType.CHOOSE:
+                child_freq_sums = [(freq_sums[c], [c]) for c in children]
+                freq_sum, opt_children = find_min_events(child_freq_sums)
+                freq_sums[node] = score
+                median_graph[node] = opt_children
+            # Add the freq_sums of both children and itself
+            elif node[0] is GraphType.ALL:
+                median_graph[node] = children
+                freq_sums[node] = sum([freq_sums[c] for c in children]) + frequencies[node]
+    # Need to prune it because it was built bottom-up, so many suboptimal parts have been added
+    median_graph = prune_graph(median_graph)
+    return median_graph
+
+def mapping_node_median(G):
+    counts = count_MPRs(G)
+    freqs = event_frequencies(G, counts)
+    # Adjust the frequencies by half to get a median
+    adj = 0.5 * counts[(NodeType.ROOT,)]
+    adjusted_freqs = {node: freq - adj for node,freq in freqs}
+    return median_subgraph(G, adjusted_freqs)
+
+def event_median(G):
+    counts = count_MPRs(G)
+    freqs = event_frequencies(G, counts)
+    pass
+
+def get_mapping_nodes(location_nodes, G):
+    maps = []
+    for l in location_nodes:
+        if l[0] is NodeType.LOCATION_MAPPING:
+            maps.append(l)
+        elif l[0] is NodeType.LOCATION_LIST:
+            maps.extend(G[l])
+        else:
+            assert False, "Bad node {}".format(l)
+    return maps
+
+def create_r_events(node, G, event_graph):
+    assignments = []
+    # Create an assignment node for the left and for the right
+    for i in [1,2]:
+        nodes = set([location_assignment[i] for location_assignment in children])
+        maps = get_mapping_nodes(nodes)
+        if len(maps) > 0:
+            assignment = (NodeType.LOCATION_LIST, node, i-1)
+            assignments.append(assignment)
+            event_graph[assignment] = []
+            for m in maps:
+                # If the syntenic location matches, it's not an R event
+                if l[2] == node[2]:
+                    event_graph[assignment].append(m)
+                # Otherwise, create the appropriate R event
+                else:
+                    r_event = (NodeType.REARRANGEMENT, node, m)
+                    event_graph[r_event] = [m]
+                    event_graph[assignment].append(r_event)
+    event_graph[node] = assignments
+
+def create_o_events(node, G, event_graph):
+    children = G[node]
+    s_choice = children[1]
+    root_syntenies = G[s_choice]
+    event_graph[s_choice] = []
+    for r in root_syntenies:
+        origin_event = (NodeType.ORIGIN_EVENT, r)
+        event_graph[s_choice.append(origin_event)]
+        event_graph[origin_event] = r
+    event_graph[node] = children
+
+def build_event_graph(G):
+    """
+    Build a graph that explicitly represents R and O events as nodes.
+    This graph will be larger than the typical reconciliation graph,
+    but is needed for computing medians w.r.t. the event distance.
+    """
+    event_graph = {}
+    for node in graph_search_order(G):
+        children = G[node]
+        if node[0] is NodeType.LOCATION_MAPPING and node[2] != "*":
+            create_r_events(node, G, event_graph)
+        if node[0] is NodeType.ORIGIN:
+            create_o_events(node, G, event_graph)
+        # All location assignment and location list nodes are replaced in the previous cases
+        # All other nodes will be faithfully kept
+        elif not node[0] is NodeType.LOCATION_ASSIGNMENT and not node[0] is NodeType.LOCATION_LIST:
+            event_graph[node] = children
+    return event_graph
