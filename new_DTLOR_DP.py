@@ -9,7 +9,9 @@ Infinity = float("inf")
 class GraphType(Enum):
     """
     Defines how each NodeType interacts with the graph when
-    choosing a reconciliation
+    choosing a reconciliation. Choose is for "mapping" nodes, that
+    choose which optimal event below them to use. All is for "event nodes",
+    all of whose children must be used if the event is chosen.
     """
     CHOOSE = auto()
     ALL = auto()
@@ -48,184 +50,187 @@ class NodeType(Enum):
     def __repr__(self):
         return "{}".format(self.name)
 
-def get_synteny_clades(ep, parasite_tree, locus_map, clades):
-    """
-    Get the set of syntenic locations associated with each subtree of the parasite tree.
-    Returns a dictionary where the key is a parasite edge and the value is a set of syntenic
-    locations in the subtree below that edge.
-    """
-    _, vp, ep1, ep2 = parasite_tree[ep]
-    if check_tip(vp, ep1, ep2):
-        clades[ep] = set([locus_map[ep]])
-    else:
-        get_synteny_clades(ep1, parasite_tree, locus_map, clades)
-        get_synteny_clades(ep2, parasite_tree, locus_map, clades)
-        clades[ep] = clades[ep1] | clades[ep2]
-    return clades
-
-def DP(host_tree, parasite_tree, phi, locus_map, D, T, L, O, R):
-    parasite_root = next(iter(parasite_tree))
-    host_root = next(iter(host_tree))
+def compute_dtlor_graph(species_tree, gene_tree, phi, locus_map, D, T, L, O, R):
+    gene_root = next(iter(gene_tree))
+    species_root = next(iter(species_tree))
     # First, compute C
-    C, C_star, C_graph = DTL_reconcile(host_tree, parasite_tree, phi, D, T, L)
-    S, S_star, S_graph = synteny_reconcile(host_tree, parasite_tree, locus_map, R)
+    C, C_star, C_graph = DTL_reconcile(species_tree, gene_tree, phi, D, T, L)
+    S, S_star, S_graph = synteny_reconcile(species_tree, gene_tree, locus_map, R)
+    #print(gene_tree)
+    #print(S_graph)
+    #print(postorder(gene_tree))
     # Union the two graphs before adding Null events
     G = {**C_graph, **S_graph}
     Origin = {}
     Null = {}
-    for ep in postorder(parasite_tree):
-        _, vp, ep1, ep2 = parasite_tree[ep]
-        o_cost = C_star[ep][0] + S_star[ep][0] + O
-        c_choice = (NodeType.SPECIES_LIST, ep)
-        s_choice = (NodeType.LOCATION_LIST, ep)
-        o_event = (NodeType.ORIGIN, ep)
+    # Compute the Origin and Null tables
+    for eg in postorder(gene_tree):
+        _, vp, eg1, eg2 = gene_tree[eg]
+        o_cost = C_star[eg][0] + S_star[eg][0] + O
+        # Each origin event for gene g
+        # leads to a species list node for optimal places to put that gene
+        c_choice = (NodeType.SPECIES_LIST, eg)
+        # And a location list node for optimal syntenic locations to give it
+        s_choice = (NodeType.LOCATION_LIST, eg)
+        o_event = (NodeType.ORIGIN, eg)
         G[o_event] = [c_choice, s_choice]
-        Origin[ep] = o_cost, [o_event]
-        if check_tip(vp, ep1, ep2):
-            Null[ep] = Infinity
+        Origin[eg] = o_cost, [o_event]
+        if check_tip(vp, eg1, eg2):
+            Null[eg] = Infinity
         else:
             # Null or Origin for left child
-            left_null = Null[ep1], [(NodeType.LOCATION_MAPPING, ep1, "*")]
-            left_origin = Origin[ep1]
+            left_null = Null[eg1], [(NodeType.LOCATION_MAPPING, eg1, "*")]
+            left_origin = Origin[eg1]
             left_cost, left_nodes = find_min_events([left_null, left_origin])
             # Null or Origin for right child
-            right_null = Null[ep1], [(NodeType.LOCATION_MAPPING, ep2, "*")]
-            right_origin = Origin[ep2]
-            right_cost, right_nodes = find_min_events([left_null, left_origin])
+            right_null = Null[eg2], [(NodeType.LOCATION_MAPPING, eg2, "*")]
+            right_origin = Origin[eg2]
+            right_cost, right_nodes = find_min_events([right_null, right_origin])
             a_nodes = []
+            # Location assignment nodes assign both left and right
             for l_node, r_node in product(left_nodes, right_nodes):
                 node = (NodeType.LOCATION_ASSIGNMENT, l_node, r_node)
-                S_graph[node] = [l_node, r_node]
+                G[node] = [l_node, r_node]
                 a_nodes.append(node)
             cost = left_cost + right_cost
-            Null[ep] = cost
-            G[(NodeType.LOCATION_MAPPING, ep, "*")] = a_nodes
+            Null[eg] = cost
+            G[(NodeType.LOCATION_MAPPING, eg, "*")] = a_nodes
     # Compute the final choice node and cost: does the root get a location or "*"?
-    root_null = (Null[parasite_root], [(NodeType.LOCATION_MAPPING, parasite_root, "*")])
-    root_origin = Origin[parasite_root]
+    root_null = (Null[gene_root], [(NodeType.LOCATION_MAPPING, gene_root, "*")])
+    root_origin = Origin[gene_root]
     root_cost, root_events = find_min_events([root_null, root_origin])
     G[(NodeType.ROOT,)] = root_events
+    #print(G)
+    # Remove the non-optimal parts of G
     G = prune_graph(G)
     return root_cost, G
 
-def DTL_reconcile(host_tree, parasite_tree, phi, D, T, L):
+def DTL_reconcile(species_tree, gene_tree, phi, D, T, L):
     A = {}
+    # node -> cost
     C = {}
     # node -> [node]
     C_graph = {}
     O = {}
+    # Holds the optimal species nodes to map a given gene node
     # gene_node -> (cost, [species_node])
     C_star = {}
     best_switch = {}
-    host_root = next(iter(host_tree))
-    for ep in postorder(parasite_tree):
-        C_star[ep] = (Infinity, [])
-        _, vp, ep1, ep2 = parasite_tree[ep]
-        vp_is_a_tip = check_tip(vp, ep1, ep2)
-        for eh in postorder(host_tree):
-            _, vh, eh1, eh2 = host_tree[eh]
-            vh_is_a_tip = check_tip(vh, eh1, eh2)
+    species_root = next(iter(species_tree))
+    for eg in postorder(gene_tree):
+        C_star[eg] = (Infinity, [])
+        _, vp, eg1, eg2 = gene_tree[eg]
+        vp_is_a_tip = check_tip(vp, eg1, eg2)
+        for es in postorder(species_tree):
+            _, vh, es1, es2 = species_tree[es]
+            vh_is_a_tip = check_tip(vh, es1, es2)
             # Relevant mapping nodes, for convenience
-            ep_eh_m = (NodeType.SPECIES_MAPPING, ep, eh)
-            ep_eh1_m = (NodeType.SPECIES_MAPPING, ep, eh1)
-            ep_eh2_m = (NodeType.SPECIES_MAPPING, ep, eh2)
-            ep1_eh_m = (NodeType.SPECIES_MAPPING, ep1, eh)
-            ep2_eh_m = (NodeType.SPECIES_MAPPING, ep2, eh)
+            eg_es_m = (NodeType.SPECIES_MAPPING, eg, es)
+            eg_es1_m = (NodeType.SPECIES_MAPPING, eg, es1)
+            eg_es2_m = (NodeType.SPECIES_MAPPING, eg, es2)
+            eg1_es_m = (NodeType.SPECIES_MAPPING, eg1, es)
+            eg2_es_m = (NodeType.SPECIES_MAPPING, eg2, es)
             # Compute A
             if vh_is_a_tip:
-                if vp_is_a_tip and phi[ep] == eh:
-                    A[ep_eh_m] = (0, [])
+                # Must match the tip mapping phi
+                if vp_is_a_tip and phi[eg] == es:
+                    A[eg_es_m] = (0, [])
                 else:
-                    A[ep_eh_m] = (Infinity, [])
+                    A[eg_es_m] = (Infinity, [])
             else:
                 # Cospeciation
                 if not vp_is_a_tip:
                     co1_event = (NodeType.COSPECIATION,
-                            (NodeType.SPECIES_MAPPING, ep1, eh1),
-                            (NodeType.SPECIES_MAPPING, ep2, eh2))
-                    co1_cost = C[(NodeType.SPECIES_MAPPING, ep1, eh1)] + \
-                            C[(NodeType.SPECIES_MAPPING, ep2, eh2)]
+                            (NodeType.SPECIES_MAPPING, eg1, es1),
+                            (NodeType.SPECIES_MAPPING, eg2, es2))
+                    co1_cost = C[(NodeType.SPECIES_MAPPING, eg1, es1)] + \
+                            C[(NodeType.SPECIES_MAPPING, eg2, es2)]
                     co1 = (co1_cost, [co1_event])
                     co2_event = (NodeType.COSPECIATION,
-                            (NodeType.SPECIES_MAPPING, ep1, eh2),
-                            (NodeType.SPECIES_MAPPING, ep2, eh1))
-                    co2_cost = C[(NodeType.SPECIES_MAPPING, ep1, eh2)] + \
-                            C[(NodeType.SPECIES_MAPPING, ep2, eh1)]
+                            (NodeType.SPECIES_MAPPING, eg1, es2),
+                            (NodeType.SPECIES_MAPPING, eg2, es1))
+                    co2_cost = C[(NodeType.SPECIES_MAPPING, eg1, es2)] + \
+                            C[(NodeType.SPECIES_MAPPING, eg2, es1)]
                     co2 = (co2_cost, [co2_event])
                     cospeciation = find_min_events([co1, co2])
                 else:
                     cospeciation = (Infinity, [])
                 # Loss
-                loss_eh1 = (C[ep_eh2_m] + L, [(NodeType.LOSS,
-                    (NodeType.SPECIES_MAPPING, ep, eh2), None)])
-                loss_eh2 = (C[ep_eh1_m] + L, [(NodeType.LOSS,
-                    (NodeType.SPECIES_MAPPING, ep, eh1), None)])
-                loss = find_min_events([loss_eh1, loss_eh2])
-                A[ep_eh_m] = find_min_events([cospeciation, loss])
+                loss_es1 = (C[eg_es2_m] + L, [(NodeType.LOSS,
+                    eg_es2_m, None)])
+                loss_es2 = (C[eg_es1_m] + L, [(NodeType.LOSS,
+                    eg_es1_m, None)])
+                loss = find_min_events([loss_es1, loss_es2])
+                A[eg_es_m] = find_min_events([cospeciation, loss])
             # Compute C
             # Duplication
             if not vp_is_a_tip:
                 dup_event = (NodeType.DUPLICATION,
-                        (NodeType.SPECIES_MAPPING, ep1, eh), 
-                        (NodeType.SPECIES_MAPPING, ep2, eh))
-                duplication = (D + C[ep1_eh_m] + C[ep2_eh_m], [dup_event])
+                        eg1_es_m, 
+                        eg2_es_m)
+                duplication = (D + C[eg1_es_m] + C[eg2_es_m], [dup_event])
             else:
                 duplication = (Infinity, [])
             # Transfer
             if not vp_is_a_tip:
-                ep2_cost, ep2_locations = best_switch[ep2_eh_m]
-                ep2_switch_cost = T + C[ep1_eh_m] + ep2_cost
-                ep2_switch_events = [(NodeType.TRANSFER,
-                    (NodeType.SPECIES_MAPPING, ep1, eh),
-                    (NodeType.SPECIES_MAPPING, ep2, location)) \
-                        for location in ep2_locations]
-                ep2_switch = (ep2_switch_cost, ep2_switch_events)
-                ep1_cost, ep1_locations = best_switch[ep1_eh_m]
-                ep1_switch_cost = T + C[ep2_eh_m] + ep1_cost
-                ep1_switch_events = [(NodeType.TRANSFER, 
-                    (NodeType.SPECIES_MAPPING, ep2, eh),
-                    (NodeType.SPECIES_MAPPING, ep1, location)) \
-                        for location in ep1_locations]
-                ep1_switch = (ep1_switch_cost, ep1_switch_events)
-                transfer = find_min_events([ep2_switch, ep1_switch])
+                eg2_cost, eg2_locations = best_switch[eg2_es_m]
+                eg2_switch_cost = T + C[eg1_es_m] + eg2_cost
+                # location[2] extracts the species node from the mapping node that stores the location
+                eg2_switch_events = [(NodeType.TRANSFER,
+                    (NodeType.SPECIES_MAPPING, eg1, es),
+                    (NodeType.SPECIES_MAPPING, eg2, location[2])) \
+                        for location in eg2_locations]
+                eg2_switch = (eg2_switch_cost, eg2_switch_events)
+                eg1_cost, eg1_locations = best_switch[eg1_es_m]
+                eg1_switch_cost = T + C[eg2_es_m] + eg1_cost
+                eg1_switch_events = [(NodeType.TRANSFER, 
+                    (NodeType.SPECIES_MAPPING, eg2, es),
+                    (NodeType.SPECIES_MAPPING, eg1, location[2])) \
+                        for location in eg1_locations]
+                eg1_switch = (eg1_switch_cost, eg1_switch_events)
+                transfer = find_min_events([eg2_switch, eg1_switch])
             else:
                 transfer = (Infinity, [])
-            cost, events = find_min_events([A[ep_eh_m], duplication, transfer])
-            C[ep_eh_m] = cost
-            C_graph[ep_eh_m] = events
-            for event in C_graph[ep_eh_m]:
+            cost, events = find_min_events([A[eg_es_m], duplication, transfer])
+            C[eg_es_m] = cost
+            C_graph[eg_es_m] = events
+            # Nodes the graph have children which are a list
+            # Add the optimal events to the graph with their children
+            for event in C_graph[eg_es_m]:
                 t,l,r = event
                 event_nodes = []
                 if l is not None:
                     event_nodes.append(l)
+                # Can be none for a loss
                 if r is not None:
                     event_nodes.append(r)
                 C_graph[event] = event_nodes
-            C_star[ep] = find_min_events([C_star[ep], (C[ep_eh_m], [eh])])
+            C_star[eg] = find_min_events([C_star[eg], (C[eg_es_m], [es])])
             # Compute O: (cost, [mapping_node])
-            O_c = (C[ep_eh_m], [ep_eh_m])
+            O_c = (C[eg_es_m], [eg_es_m])
             if vh_is_a_tip:
-                O[ep_eh_m] = O_c
+                O[eg_es_m] = O_c
             else:
-                O[ep_eh_m] = find_min_events([O_c, O[ep_eh1_m], O[ep_eh2_m]])
+                O[eg_es_m] = find_min_events([O_c, O[eg_es1_m], O[eg_es2_m]])
         # Compute best_switch
-        best_switch[(NodeType.SPECIES_MAPPING, ep, host_root)] = (Infinity, [])
-        for eh in preorder(host_tree):
-            _, vh, eh1, eh2 = host_tree[eh]
-            vh_is_a_tip = check_tip(vh, eh1, eh2)
-            ep_eh_m = (NodeType.SPECIES_MAPPING, ep, eh)
-            ep_eh1_m = (NodeType.SPECIES_MAPPING, ep, eh1)
-            ep_eh2_m = (NodeType.SPECIES_MAPPING, ep, eh2)
+        best_switch[(NodeType.SPECIES_MAPPING, eg, species_root)] = (Infinity, [])
+        for es in preorder(species_tree):
+            _, vh, es1, es2 = species_tree[es]
+            vh_is_a_tip = check_tip(vh, es1, es2)
+            eg_es_m = (NodeType.SPECIES_MAPPING, eg, es)
+            eg_es1_m = (NodeType.SPECIES_MAPPING, eg, es1)
+            eg_es2_m = (NodeType.SPECIES_MAPPING, eg, es2)
             if not vh_is_a_tip:
-                best_switch[ep_eh1_m] = find_min_events([best_switch[ep_eh_m], O[ep_eh2_m]])
-                best_switch[ep_eh2_m] = find_min_events([best_switch[ep_eh_m], O[ep_eh1_m]])
-        # Now that we're done computing C_star[ep], add appropriate choice events
-        species_choice = (NodeType.SPECIES_LIST, ep)
-        C_graph[species_choice] = [(NodeType.SPECIES_MAPPING, ep, eh) for eh in C_star[ep][1]]
+                best_switch[eg_es1_m] = find_min_events([best_switch[eg_es_m], O[eg_es2_m]])
+                best_switch[eg_es2_m] = find_min_events([best_switch[eg_es_m], O[eg_es1_m]])
+        # Now that we're done computing C_star[eg], add appropriate choice events
+        species_choice = (NodeType.SPECIES_LIST, eg)
+        C_graph[species_choice] = [(NodeType.SPECIES_MAPPING, eg, es) for es in C_star[eg][1]]
     return C, C_star, C_graph
 
-#TODO gene/species vs. parasite/host
-def synteny_reconcile(host_tree, parasite_tree, locus_map, R):
+#TODO gene/species vs. gene/species
+def synteny_reconcile(species_tree, gene_tree, locus_map, R):
+    # Holds the optimal syntenic locations for a given gene node
     # gene_node -> [location]
     S_star = {}
     # (g,s) -> cost
@@ -235,27 +240,29 @@ def synteny_reconcile(host_tree, parasite_tree, locus_map, R):
     allsynteny = set(locus_map.values())
     # Capture R for convenience
     delta = lambda l1, l2: delta_r(l1, l2, R)
-    for ep in postorder(parasite_tree):
-        S_star[ep] = (Infinity, [])
-        _, vp, ep1, ep2 = parasite_tree[ep]
+    for eg in postorder(gene_tree):
+        S_star[eg] = (Infinity, [])
+        _, vp, eg1, eg2 = gene_tree[eg]
         for lp in allsynteny:
-            ep_lp_m = (NodeType.LOCATION_MAPPING, ep, lp)
-            if check_tip(vp, ep1, ep2):
-                if locus_map[ep] == lp:
-                    S[ep_lp_m] = 0
-                    S_graph[ep_lp_m] = []
+            eg_lp_m = (NodeType.LOCATION_MAPPING, eg, lp)
+            if check_tip(vp, eg1, eg2):
+                if locus_map[eg] == lp:
+                    S[eg_lp_m] = 0
+                    S_graph[eg_lp_m] = []
+                    # lp is always the optimum for eg with no cost
+                    S_star[eg] = (0, [lp])
                 else:
-                    S[(NodeType.LOCATION_MAPPING, ep, lp)] = Infinity
+                    S[eg_lp_m] = Infinity
             else:
                 # Synteny cost for the left child
-                l_keep_m = (NodeType.LOCATION_MAPPING, ep1, lp)
+                l_keep_m = (NodeType.LOCATION_MAPPING, eg1, lp)
                 l_keep = (S[l_keep_m], [l_keep_m])
-                l_rearrange = (S_star[ep1][0] + R, [(NodeType.LOCATION_LIST, ep1)])
+                l_rearrange = (S_star[eg1][0] + R, [(NodeType.LOCATION_LIST, eg1)])
                 l_cost, l_nodes = find_min_events([l_keep, l_rearrange])
                 # Synteny cost for the right child
-                r_keep_m = (NodeType.LOCATION_MAPPING, ep2, lp)
+                r_keep_m = (NodeType.LOCATION_MAPPING, eg2, lp)
                 r_keep = (S[r_keep_m], [r_keep_m])
-                r_rearrange = (S_star[ep2][0] + R, [(NodeType.LOCATION_LIST, ep2)])
+                r_rearrange = (S_star[eg2][0] + R, [(NodeType.LOCATION_LIST, eg2)])
                 r_cost, r_nodes = find_min_events([r_keep, r_rearrange])
                 a_nodes = []
                 # Create the appropriate assignment nodes
@@ -264,12 +271,13 @@ def synteny_reconcile(host_tree, parasite_tree, locus_map, R):
                     S_graph[node] = [l_node, r_node]
                     a_nodes.append(node)
                 cost = l_cost + r_cost
-                S[(NodeType.LOCATION_MAPPING, ep, lp)] = cost
-                S_graph[ep_lp_m] = a_nodes
-                S_star[ep] = find_min_events([S_star[ep], (cost, [lp])])
+                #assert cost < Infinity
+                S[(NodeType.LOCATION_MAPPING, eg, lp)] = cost
+                S_graph[eg_lp_m] = a_nodes
+                S_star[eg] = find_min_events([S_star[eg], (cost, [lp])])
         # Create the appropriate choice node
-        location_choice = (NodeType.LOCATION_LIST, ep)
-        S_graph[location_choice] = [(NodeType.LOCATION_MAPPING, ep, lp) for lp in S_star[ep][1]]
+        location_choice = (NodeType.LOCATION_LIST, eg)
+        S_graph[location_choice] = [(NodeType.LOCATION_MAPPING, eg, lp) for lp in S_star[eg][1]]
     return S, S_star, S_graph
 
 #TODO: methods of Graph class?
@@ -283,37 +291,44 @@ def prune_graph(G):
     while len(extant_nodes) != 0:
         node = extant_nodes.pop()
         if node[0].graph_type is not None:
+            #print(node)
             children = G[node]
+            #print(children)
             new_G[node] = children
             extant_nodes |= set(children)
     return new_G
 
-def find_MPR(G, MPR, rand=False):
+def find_MPR(G, rand=False):
+    """
+    Samples a traversal from a graph
+    """
     MPR = {}
+    # BFS
     extant_nodes = [(NodeType.ROOT,)]
     while len(extant_nodes) != 0:
         node = extant_nodes.pop()
-        node_children = G[node]
-        if node[0].graph_type is GraphType.CHOOSE:
-            if rand:
-                choice = random.choice(node_children)
+        children = G[node]
+        if len(children) > 0:
+            # Choose or take all children based on the GraphType
+            if node[0].graph_type is GraphType.CHOOSE:
+                if rand:
+                    choice = random.choice(children)
+                else:
+                    choice = children[0]
+                MPR[node] = choice
+                extant_nodes.append(choice)
+            elif node[0].graph_type is GraphType.ALL:
+                MPR[node] = children
+                extant_nodes.extend(children)
             else:
-                choice = node_children[0]
-            MPR[node] = choice
-            extant_nodes.append(choice)
-        elif node[0].graph_type is GraphType.ALL:
-            MPR[node] = node_children
-            extant_nodes.extend(node_children)
-        elif node[0].graph_type is None:
-            pass
-        else:
-            assert False, "Bad GraphType"
+                assert False, "Bad GraphType"
     return MPR
 
-#TODO: should children be stored as a set anyways?
 def graph_search_order(G):
     """
     Iterator over the nodes of G in BFS order (parents before children)
+    Uses set, so the order isn't deterministic, but for the bottom-up/top-down
+    DP algorithms, this does not matter
     """
     extant_nodes = set([(NodeType.ROOT,)])
     while len(extant_nodes) != 0:
@@ -322,9 +337,14 @@ def graph_search_order(G):
         extant_nodes |= set(node_children)
         yield node
 
-#TODO: should Nodes be objects?
 def count_MPRs(G):
+    """
+    Count the total number of traversals in G (which is the number of optimal MPRs)
+    Computes a node -> count table which is the number of optimal sub-MPRs in
+    the subtree rooted at node.
+    """
     counts = {}
+    # Reverse the graph search order to get children before parents
     postorder = list(graph_search_order(G))[::-1]
     for node in postorder:
         children = G[node]
@@ -339,9 +359,14 @@ def count_MPRs(G):
             # Choose means add
             elif node[0].graph_type is GraphType.CHOOSE:
                 counts[node] = sum(child_counts)
+            else:
+                assert False, "Bad GraphType"
     return counts
 
 def event_frequencies(G, counts):
+    """
+    Compute the 'frequency' of every node - the number of MPRs it appears in
+    """
     frequencies = defaultdict(int)
     for node in graph_search_order(G):
         if node[0] is NodeType.ROOT:
@@ -356,6 +381,8 @@ def event_frequencies(G, counts):
             # Choose divides the frequency according to the relative proportion of the count
             elif node[0].graph_type is GraphType.CHOOSE:
                 frequencies[child] += multiplier * counts[child]
+            else:
+                assert False, "Bad GraphType"
     return frequencies
 
 def median_subgraph(G, frequencies):
@@ -364,6 +391,7 @@ def median_subgraph(G, frequencies):
     """
     median_graph = {}
     freq_sums = {}
+    # Children to parents
     postorder = list(graph_search_order(G))[::-1]
     for node in postorder:
         children = G[node]
@@ -372,33 +400,44 @@ def median_subgraph(G, frequencies):
             median_graph[node] = []
         else:
             # Choose the score from the best child
-            if node[0] is GraphType.CHOOSE:
+            if node[0].graph_type is GraphType.CHOOSE:
                 child_freq_sums = [(freq_sums[c], [c]) for c in children]
                 freq_sum, opt_children = find_min_events(child_freq_sums)
-                freq_sums[node] = score
+                freq_sums[node] = freq_sum
                 median_graph[node] = opt_children
             # Add the freq_sums of both children and itself
-            elif node[0] is GraphType.ALL:
+            elif node[0].graph_type is GraphType.ALL:
                 median_graph[node] = children
                 freq_sums[node] = sum([freq_sums[c] for c in children]) + frequencies[node]
+            else:
+                assert False, "Bad GraphType"
     # Need to prune it because it was built bottom-up, so many suboptimal parts have been added
     median_graph = prune_graph(median_graph)
     return median_graph
 
-def mapping_node_median(G):
+def build_median_graph(G):
+    """
+    Build the median graph by doing the 3 necessary DP algorithms
+    """
+    # First, get the counts and node frequencies
     counts = count_MPRs(G)
     freqs = event_frequencies(G, counts)
     # Adjust the frequencies by half to get a median
     adj = 0.5 * counts[(NodeType.ROOT,)]
-    adjusted_freqs = {node: freq - adj for node,freq in freqs}
+    adjusted_freqs = {node: freq - adj for node,freq in freqs.items()}
     return median_subgraph(G, adjusted_freqs)
 
-def event_median(G):
-    counts = count_MPRs(G)
-    freqs = event_frequencies(G, counts)
-    pass
+def build_event_median_graph(G):
+    """
+    Build the mediant graph for the event symmetric set distance
+    """
+    event_graph = build_event_graph(G)
+    return build_median_graph(event_graph)
 
 def get_mapping_nodes(location_nodes, G):
+    """
+    Get the list of location mapping nodes below  the given location assignments
+    """
     maps = []
     for l in location_nodes:
         if l[0] is NodeType.LOCATION_MAPPING:
@@ -410,18 +449,23 @@ def get_mapping_nodes(location_nodes, G):
     return maps
 
 def create_r_events(node, G, event_graph):
+    """
+    Take a location mapping node and create the set of R event nodes and location
+    assignments that should appear below it (that replace the location list nodes)
+    """
     assignments = []
+    children = G[node]
     # Create an assignment node for the left and for the right
     for i in [1,2]:
         nodes = set([location_assignment[i] for location_assignment in children])
-        maps = get_mapping_nodes(nodes)
+        maps = get_mapping_nodes(nodes, G)
         if len(maps) > 0:
             assignment = (NodeType.LOCATION_LIST, node, i-1)
             assignments.append(assignment)
             event_graph[assignment] = []
             for m in maps:
                 # If the syntenic location matches, it's not an R event
-                if l[2] == node[2]:
+                if m[2] == node[2]:
                     event_graph[assignment].append(m)
                 # Otherwise, create the appropriate R event
                 else:
@@ -431,14 +475,17 @@ def create_r_events(node, G, event_graph):
     event_graph[node] = assignments
 
 def create_o_events(node, G, event_graph):
+    """
+    Interpolate an Origin event node before each choice of location for an originating gene node
+    """
     children = G[node]
     s_choice = children[1]
     root_syntenies = G[s_choice]
     event_graph[s_choice] = []
     for r in root_syntenies:
         origin_event = (NodeType.ORIGIN_EVENT, r)
-        event_graph[s_choice.append(origin_event)]
-        event_graph[origin_event] = r
+        event_graph[s_choice].append(origin_event)
+        event_graph[origin_event] = [r]
     event_graph[node] = children
 
 def build_event_graph(G):
@@ -450,9 +497,18 @@ def build_event_graph(G):
     event_graph = {}
     for node in graph_search_order(G):
         children = G[node]
-        if node[0] is NodeType.LOCATION_MAPPING and node[2] != "*":
-            create_r_events(node, G, event_graph)
-        if node[0] is NodeType.ORIGIN:
+        if node[0] is NodeType.LOCATION_MAPPING:
+            if node[2] != "*":
+                create_r_events(node, G, event_graph)
+            # Copy the location assignment nodes
+            # This makes it easier to case out copying the location assignments when
+            # the syntenic location is not *, since the location assignment node does
+            # not keep track of the syntenic location of the parent
+            else:
+                event_graph[node] = G[node]
+                for child in G[node]:
+                    event_graph[child] = G[child]
+        elif node[0] is NodeType.ORIGIN:
             create_o_events(node, G, event_graph)
         # All location assignment and location list nodes are replaced in the previous cases
         # All other nodes will be faithfully kept

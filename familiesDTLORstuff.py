@@ -1,4 +1,5 @@
 import trees, DTLOR_DP, random
+import new_DTLOR_DP
 
 def reduceLocusMap(geneTree,locusMapD):
     '''Create a new locus map D with only entries for genes in geneTree.'''
@@ -27,7 +28,11 @@ def reconcile(argT):
     bestMPRs=[]
     for geneTree in allRootingsL:
         geneTreeD=trees.parseTreeForDP(geneTree,parasite=True) # gene tree to right format
-        MPR,cost=DTLOR_DP.DP(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+        #MPR,cost=DTLOR_DP.DP(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+        cost, G = new_DTLOR_DP.compute_dtlor_graph(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+        MPR = new_DTLOR_DP.find_MPR(G)
+        median_graph = new_DTLOR_DP.build_median_graph(G)
+        event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
         print("Min Cost: {}".format(cost))
         if cost < best_score: 
             # If the score is better than current best
