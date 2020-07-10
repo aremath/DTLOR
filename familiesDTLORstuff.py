@@ -30,10 +30,13 @@ def reconcile(argT):
         geneTreeD=trees.parseTreeForDP(geneTree,parasite=True) # gene tree to right format
         #MPR,cost=DTLOR_DP.DP(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
         cost, G = new_DTLOR_DP.compute_dtlor_graph(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+        old_cost, old_G, old_nmprs = DTLOR_DP.DP(speciesTree, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
+        nmprs = new_DTLOR_DP.count_MPRs(G)[(new_DTLOR_DP.NodeType.ROOT,)]
         MPR = new_DTLOR_DP.find_MPR(G)
         median_graph = new_DTLOR_DP.build_median_graph(G)
         event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
-        print("Min Cost: {}".format(cost))
+        print("Min Cost: {}, {}".format(cost, nmprs))
+        print("Old Min Cost: {}, {}".format(old_cost, nmprs))
         if cost < best_score: 
             # If the score is better than current best
             # Update best score, clear record and add new record

@@ -385,6 +385,7 @@ def event_frequencies(G, counts):
                 assert False, "Bad GraphType"
     return frequencies
 
+#TODO: pass an argument indicating for each event type whether it is included in the distance metric
 def median_subgraph(G, frequencies):
     """
     Compute the medians by maximizing the sum of the (pre-adjusted) frequencies
@@ -415,6 +416,7 @@ def median_subgraph(G, frequencies):
     median_graph = prune_graph(median_graph)
     return median_graph
 
+#TODO: event weights
 def build_median_graph(G):
     """
     Build the median graph by doing the 3 necessary DP algorithms

@@ -2,11 +2,11 @@ import sys,copy
 import trees,familiesDTLORstuff
 
 # costs
-D = 0.3 # duplication
-T = 0.4 # transfer
-L = 0.4 # loss
-O = 0.1 # origin
-R = 0.2 # rearrangment
+D = 1 # duplication
+T = 1 # transfer
+L = 1 # loss
+O = 1 # origin
+R = 1 # rearrangment
 
 ## funcs
 
