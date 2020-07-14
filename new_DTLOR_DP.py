@@ -50,6 +50,25 @@ class NodeType(Enum):
     def __repr__(self):
         return "{}".format(self.name)
 
+# Weights for each event type for the distance metric
+default_event_weights = {t: 1 for t in NodeType}
+# Set of nodes which are implicated in the distance metric
+# For the location mapping node symmetric set distance
+dist_matters_nodes = set([
+    NodeType.LOCATION_MAPPING,
+    NodeType.DUPLICATION,
+    NodeType.LOSS,
+    NodeType.TRANSFER,
+    NodeType.COSPECIATION])
+# For the event symmetric set distance
+dist_matters_events = set([
+    NodeType.ORIGIN_EVENT,
+    NodeType.REARRANGEMENT,
+    NodeType.DUPLICATION,
+    NodeType.LOSS,
+    NodeType.TRANSFER,
+    NodeType.COSPECIATION])
+
 def compute_dtlor_graph(species_tree, gene_tree, phi, locus_map, D, T, L, O, R):
     gene_root = next(iter(gene_tree))
     species_root = next(iter(species_tree))
@@ -315,7 +334,7 @@ def find_MPR(G, rand=False):
                     choice = random.choice(children)
                 else:
                     choice = children[0]
-                MPR[node] = choice
+                MPR[node] = [choice]
                 extant_nodes.append(choice)
             elif node[0].graph_type is GraphType.ALL:
                 MPR[node] = children
@@ -385,8 +404,7 @@ def event_frequencies(G, counts):
                 assert False, "Bad GraphType"
     return frequencies
 
-#TODO: pass an argument indicating for each event type whether it is included in the distance metric
-def median_subgraph(G, frequencies):
+def median_subgraph(G, frequencies, dist_matters):
     """
     Compute the medians by maximizing the sum of the (pre-adjusted) frequencies
     """
@@ -397,44 +415,57 @@ def median_subgraph(G, frequencies):
     for node in postorder:
         children = G[node]
         if len(children) == 0:
-            freq_sums[node] = frequencies[node]
+            freq_sums[node] = 0
             median_graph[node] = []
         else:
             # Choose the score from the best child
             if node[0].graph_type is GraphType.CHOOSE:
-                child_freq_sums = [(freq_sums[c], [c]) for c in children]
-                freq_sum, opt_children = find_min_events(child_freq_sums)
-                freq_sums[node] = freq_sum
+                # Negate them because we want to maximize the freq sum
+                child_freq_sums = [(-freq_sums[c], [c]) for c in children]
+                # Finding the min events of the negative freq_sums finds the maximum freq_sums
+                neg_freq_sum, opt_children = find_min_events(child_freq_sums)
+                freq_sums[node] = -neg_freq_sum
                 median_graph[node] = opt_children
             # Add the freq_sums of both children and itself
             elif node[0].graph_type is GraphType.ALL:
                 median_graph[node] = children
-                freq_sums[node] = sum([freq_sums[c] for c in children]) + frequencies[node]
+                freq_sums[node] = sum([freq_sums[c] for c in children])
             else:
                 assert False, "Bad GraphType"
+        if node[0] in dist_matters:
+            freq_sums[node] += frequencies[node]
     # Need to prune it because it was built bottom-up, so many suboptimal parts have been added
     median_graph = prune_graph(median_graph)
     return median_graph
 
 #TODO: event weights
-def build_median_graph(G):
+def build_median_graph(G, event_weights, dist_matters):
     """
     Build the median graph by doing the 3 necessary DP algorithms
+    G: Reconciliation graph
+    event_weights: dict from NodeType -> float indicating how much to weight each event
+    dist_matters: set of NodeType which indicates which types of nodes are included in the distance metric
     """
     # First, get the counts and node frequencies
     counts = count_MPRs(G)
     freqs = event_frequencies(G, counts)
     # Adjust the frequencies by half to get a median
     adj = 0.5 * counts[(NodeType.ROOT,)]
-    adjusted_freqs = {node: freq - adj for node,freq in freqs.items()}
-    return median_subgraph(G, adjusted_freqs)
+    adjusted_freqs = {node: event_weights[node[0]] * (freq - adj) for node,freq in freqs.items()}
+    return median_subgraph(G, adjusted_freqs, dist_matters)
 
-def build_event_median_graph(G):
+def build_node_median_graph(G, event_weights=default_event_weights):
     """
-    Build the mediant graph for the event symmetric set distance
+    Build the median graph for the location mapping node symmetric set distance
+    """
+    build_median_graph(G, event_weights, dist_matters_nodes)
+
+def build_event_median_graph(G, event_weights=default_event_weights):
+    """
+    Build the median graph for the event symmetric set distance
     """
     event_graph = build_event_graph(G)
-    return build_median_graph(event_graph)
+    return build_median_graph(event_graph, event_weights, dist_matters_events)
 
 def get_mapping_nodes(location_nodes, G):
     """
