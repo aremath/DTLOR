@@ -1,5 +1,6 @@
 import sys,copy
 import trees,familiesDTLORstuff
+from Tree import *
 
 # costs
 D = 1 # duplication
@@ -19,7 +20,7 @@ def loadD(fn):
             if s=='':
                 break
             L=s.rstrip().split("\t")
-            gene=int(L[0])
+            gene=L[0]
             if L[1].isdigit():
                 value=int(L[1])
             else:
@@ -36,19 +37,20 @@ if __name__ == "__main__":
     geneTreeFN = sys.argv[2]
 
     # load stuff
-    speciesTree = trees.readTree(speciesTreeFN)
-    geneTree = trees.loadOneGeneTree(geneTreeFN)
+    speciesTree = Rtree()
+    speciesTree.fromNewickFileLoadSpeciesTree(speciesTreeFN)
+    geneTree = Utree()
+    geneTree.fromNewickFile(geneTreeFN)
 
     bigTipMapD = loadD("tipMap.tsv")
     tipMapD = {} # cut down to those in this gene tree
-    for leaf in trees.leafList(geneTree):
+    for leaf in geneTree.leaves():
         tipMapD[leaf]=bigTipMapD[leaf]
     
     locusMapD = loadD("locusMap.tsv")
     gtLocusMapD = familiesDTLORstuff.reduceLocusMap(geneTree,locusMapD)
-    locusMapForRootingD = trees.createLocusMapForRootingD(geneTree,copy.deepcopy(gtLocusMapD))
     
-    argT = (speciesTree,geneTree,tipMapD,gtLocusMapD,locusMapForRootingD,D,T,L,O,R)
+    argT = (speciesTree,geneTree,tipMapD,gtLocusMapD,D,T,L,O,R)
 
     optRootedGeneTree,optMPR = familiesDTLORstuff.reconcile(argT)
 

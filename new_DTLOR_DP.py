@@ -21,34 +21,40 @@ class NodeType(Enum):
     Encodes the type of a node in a reconciliation graph
     """
     # DTL events
-    COSPECIATION = (auto(), GraphType.ALL)
-    DUPLICATION = (auto(), GraphType.ALL)
-    LOSS = (auto(), GraphType.ALL)
-    TRANSFER = (auto(), GraphType.ALL)
+    COSPECIATION = (1, GraphType.ALL)
+    DUPLICATION = (2, GraphType.ALL)
+    LOSS = (3, GraphType.ALL)
+    TRANSFER = (4, GraphType.ALL)
     # Assigns locations to the left and right children of a gene node
-    LOCATION_ASSIGNMENT = (auto(), GraphType.ALL)
+    LOCATION_ASSIGNMENT = (5, GraphType.ALL)
     # Maps a gene tree node to a list of locations
-    LOCATION_LIST = (auto(), GraphType.CHOOSE)
+    LOCATION_LIST = (6, GraphType.CHOOSE)
     # Maps a gene tree node to a syntenic location
-    LOCATION_MAPPING = (auto(), GraphType.CHOOSE)
+    LOCATION_MAPPING = (7, GraphType.CHOOSE)
     # Maps a gene tree node to a list of species tree nodes
     # Used for choosing the optimal root of a reconciliation
-    SPECIES_LIST = (auto(), GraphType.CHOOSE)
+    SPECIES_LIST = (8, GraphType.CHOOSE)
     # Maps gene tree node to species tree node
-    SPECIES_MAPPING = (auto(), GraphType.CHOOSE)
+    SPECIES_MAPPING = (9, GraphType.CHOOSE)
     # When a gene gets a true location (which location is yet unknown)
-    ORIGIN = (auto(), GraphType.ALL)
+    ORIGIN = (10, GraphType.ALL)
     # "Root" event for choosing the syntenic location of the root
-    ROOT = (auto(), GraphType.CHOOSE)
+    ROOT = (11, GraphType.CHOOSE)
     # Event node that represents a change from one syntenic location to another
-    REARRANGEMENT = (auto(), GraphType.ALL)
+    REARRANGEMENT = (12, GraphType.ALL)
     # Event node that represents the origin of an actual syntenic location
-    ORIGIN_EVENT = (auto(), GraphType.ALL)
+    ORIGIN_EVENT = (13, GraphType.ALL)
     def __init__(self, e_id, graph_type):
         self._e_id = e_id
         self.graph_type = graph_type
     def __repr__(self):
         return "{}".format(self.name)
+    def __eq__(self, other):
+        return self._e_id == other._e_id
+    def __ne__(self, other):
+        return self._e_id != other._e_id
+    def __hash__(self):
+        return hash((self._e_id))
 
 # Weights for each event type for the distance metric
 default_event_weights = {t: 1 for t in NodeType}
