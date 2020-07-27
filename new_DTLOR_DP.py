@@ -4,6 +4,92 @@ from itertools import product
 from functools import reduce
 from DTLOR_DP import check_tip, preorder, postorder, delta_r, find_min_events
 
+## This file includes methods for computing a DTLOR reconciliation graph,
+# which represents all optimal reconciliations for a DTLOR instance.
+# The graph is implemented as a dictionary, where the keys are Node Tuples, and the values
+# are lists of Node Tuples, corresponding to that node's children. Leaf nodes have an empty child list.
+# The reconciliation graph consists of three main parts: The Origin part, the DTL part, and the Rearrangement part.
+## 1) The Origin part:
+# The origin part contains three types of nodes: ORIGIN nodes, LOCATION_MAPPING, and LOCATION_ASSIGNMENT nodes.
+# The location mapping nodes in the origin part of the graph always assign a gene node to *, and look like:
+# (NodeType.LOCATION_MAPPING, gene_node, "*")
+# An origin node indicates that it is optimal for a given node to recieve a real syntenic location via
+# an origin event on the branch leading to that node. It looks like:
+# (NodeType.ORIGIN, gene_node)
+# Finally, a location assignment node is used to choose between multiple optimal possibilities. Each location mapping
+# node may have multiple location assignment children, only one of which is used in an optimal reconciliation.
+# Each location assignment node holds a mapping for the left and the right child, and looks like
+# (NodeType.LOCATION_ASSIGNMENT, left_node, right_node)
+# where left_node and right_node are the assignment for the left and the right child respectively.
+# In this part of the graph, the left and the right nodes are either origin nodes or location assignment nodes
+# that map to syntenic location *.
+# Note that even though the node itself is labeled with its left and right children, the preferred way to get
+# access to the children of such a node is by indexing the graph to get a list using G[node].
+# An origin node has two children, both of which are used in a reconciliation.
+# One child is a SPECIES_LIST node whose children are the optimal species mappings for the gene node.
+# The second child is a LOCATION_LIST node, whose children are optimal syntenic location mappings for that node.
+## 2) The DTL part:
+# The DTL part looks like a traditional DTL reconciliation graph. It has six types of nodes: 
+# SPECIES_LIST, COSPECIATION, TRANSFER, LOSS, DUPLICATION, SPECIES_MAPPING
+# The SPECIES_LIST node, as described above, is the entry point into the DTL graph.
+# It loosely corresponds to best_roots from the previous formulation. When a node gets a syntenic location, it can
+# be mapped to anywhere on the species tree. The species list keeps track of the optimal species nodes to map a given
+# gene node to. Thus, it looks like:
+# (NodeType.SPECIES_LIST, gene_node)
+# and has SPECIES_MAPPING children, one of which will be chosen in a reconciliation.
+# COSPECIATION, TRANSFER, LOSS, and DUPLICATION nodes are the usual DTL event nodes.
+# Each has children that are SPECIES_MAPPING nodes. LOSS nodes only have one child. When an event node is part
+# of a reconciliation, all of its children are also part of that reconciliation.
+# Finally, a SPECIES_MAPPING node records the mapping of a given gene node to a given species node. Because of loss
+# events, multiple mapping nodes involving the same gene node on different species nodes may be present in a
+# reconciliation. A SPECIES_MAPPING node looks like:
+# (NodeType.SPECIES_MAPPING, gene_node, species_node)
+## 3) The Rearrangement part:
+# The rearrangement part finds the optimal syntenic location mappings for nodes that have a real (non-*) location.
+# It has LOCATION_MAPPING, LOCATION_ASSIGNMENT, and LOCATION_LIST nodes.
+# A location mapping node records the assignment of a given gene node to a given syntenic location, so it looks like
+# (NodeType.LOCATION_MAPPING, gene_node, location)
+# This is the same as the way it is used in the Origin part of the graph, except the location no longer *.
+# A location assignment node is also used in the same way as the Origin part of the graph:
+# it holds the optimal assignment for the left and right children of the mapped node.
+# A location list node is introduced in this part of the graph to handle rearrangement events.
+# When a node gets a new syntenic location via rearrangement, there may be many optimal locations that it can get
+# One of the ways this graph representation saves space is not to represent every possible rearrangement explicitly.
+# Instead, a location list node is used to describe every possible optimal (new) syntenic location that each node
+# can receive. So a location list looks like:
+# (NodeType.LOCATION_LIST, gene_node, [optimal_locations])
+# And has many LOCATION_MAPPING children, one of which is chosen when choosing a reconciliation.
+## Through origin events, the Origin part of the graph is connected to the DTL and Rearrangement parts of the graph.
+# Each Origin node has a SPECIES_LIST child which connects to SPECIES_MAPPING nodes in the DTL part, and it also has
+# a LOCATION_LIST child which connects to LOCATION_MAPPING nodes in the rearrangement part.
+# For a given origin family, the gene root of that family corresponds to an origin node. To find the rest of the
+# reconciliation for that family, one can do the standard reconciliation-finding process starting from
+# that origin node. This will yield both a DTL reconciliation that has species mapping nodes, and a synteny
+# reconciliation that has location mapping nodes (connected at the top by the origin node).
+## Each NodeType has a GraphType, which is used when building a reconciliation.
+# For example, DTL event have GraphType.ALL, which means that when building a reconciliation, ALL of their
+# children should be included
+# On the other hand, SPECIES_MAPPING nodes have GraphType.CHOOSE, because only one of their event node children will
+# be used in the reconciliation.
+## Finally, there is a graph representation which is slightly less efficient, but represeents R and O events explicitly
+# This can be obtained from the original graph using the build_event_graph function.
+# In this new representation, O and R events have their own nodes, with only one child. For example, if (g1, l1)
+# rearranges to (g2, l2) along the (g1, l1) branch, the corresponding graph will look like:
+# { (NodeType.LOCATION_MAPPING, g1, l1) : [(NodeType.REARRANGEMENT, ...)]
+# (NodeType.REARRANGEMENT, ...) : [(NodeType.LOCATION_MAPPING, g2, l2)]}
+# For the ... in the above example, the rearrangement is labeled with both the parent and the child nodes in order
+# to ensure uniqueness.
+# This less-efficient graph representation allows computing the median with respect to a metric that involves the
+# symmetric set difference between O and R events, rather than the difference between mapping nodes (which can be
+# done using the previous representation)
+## In order to interact with the graph, the main intended way is to use prune_graph. prune_graph takes an optional
+# starting_points parameter, which is the nodes to start from, and it creates a new graph which is only the nodes
+# reachable from the given starting points. For example, to get the origin subgraphs for a given graph, we can
+# do something like:
+# origins = [n for n in graph.keys() if n[0] is NodeType.ORIGIN]
+# origin_graphs = [prune_graph(graph, [o]) for o in origins]
+# All of the other algorithms (finding medians, etc.) should work on the graphs produced this way.
+
 Infinity = float("inf")
 
 class GraphType(Enum):
@@ -306,13 +392,19 @@ def synteny_reconcile(species_tree, gene_tree, locus_map, R):
     return S, S_star, S_graph
 
 #TODO: methods of Graph class?
-def prune_graph(G):
+def prune_graph(G, starting_points=None):
     """
     Removes the unnecessary nodes from G.
     """
     new_G = {}
     # Use a set to prevent reprocessing
-    extant_nodes = set([(NodeType.ROOT,)])
+    if starting_points is None:
+        extant_nodes = set([(NodeType.ROOT,)])
+    else:
+        for s in starting_points:
+            assert s in G
+        new_G[(NodeType.ROOT,)] = starting_points
+        extant_nodes = set(starting_points)
     while len(extant_nodes) != 0:
         node = extant_nodes.pop()
         if node[0].graph_type is not None:
