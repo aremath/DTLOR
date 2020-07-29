@@ -99,8 +99,8 @@ class GraphType(Enum):
     choose which optimal event below them to use. All is for "event nodes",
     all of whose children must be used if the event is chosen.
     """
-    CHOOSE = auto()
-    ALL = auto()
+    CHOOSE = 1
+    ALL = 2
 
 class NodeType(Enum):
     """
@@ -439,6 +439,8 @@ def find_MPR(G, rand=False):
                 extant_nodes.extend(children)
             else:
                 assert False, "Bad GraphType"
+        else:
+            MPR[node] = []
     return MPR
 
 def graph_search_order(G):
@@ -646,3 +648,61 @@ def build_event_graph(G):
         elif not node[0] is NodeType.LOCATION_ASSIGNMENT and not node[0] is NodeType.LOCATION_LIST:
             event_graph[node] = children
     return event_graph
+
+def get_species_mappings(gene_node, G):
+    """
+    Helper for get_events that returns all of the species mappings for a given gene
+    """
+    return [node[2] for node in G if node[0] is NodeType.SPECIES_MAPPING and node[1] == gene_node]
+
+def get_events(MPR):
+    """
+    Gets a list of events from an MPR. Requires an MPR built from an event graph
+    rather than an MPR built from a normal graph. Use build_event_graph(G) to do the conversion first.
+    Returns a list of Events. Each DTL event is structured as
+    (event_type, gene_node, species_node)
+    Where the event_type is a NodeType for DUPLICATION, TRANSFER, LOSS, or COSPECIATION
+    Each O and R event is structured as
+    (event_type, gene_node, location, [species_node])
+    Where the event_type is a NodeType for ORIGIN or REARRANGEMENT
+    The list of species nodes are all the locations that the gene_node is mapped to
+    (may be singleton, unless there are losses)
+    """
+    events = []
+    for node in graph_search_order(MPR):
+        children = MPR[node]
+        # Origin events
+        if node[0] is NodeType.ORIGIN:
+            gene_node = node[1]
+            origin_child = MPR[node][1]
+            o_event = MPR[origin_child]
+            assert len(o_event) == 1, "Invalid MPR: {}".format(o_event)
+            origin_child = o_event[0]
+            origin_locus = origin_child[1][2]
+            species = get_species_mappings(gene_node, MPR)
+            event = (NodeType.ORIGIN, gene_node, origin_locus, species)
+            events.append(event)
+        # DTL events
+        elif node[0] is NodeType.SPECIES_MAPPING and len(children) > 0:
+            gene_node = node[1]
+            species_node = node[2]
+            dtl_child = MPR[node]
+            assert len(dtl_child) == 1, "Invalid MPR: {}".format(dtl_child)
+            dtl_child = dtl_child[0]
+            event_type = dtl_child[0]
+            event = (event_type, gene_node, species_node)
+            events.append(event)
+        # Rearrangement events
+        elif node[0] is NodeType.LOCATION_MAPPING and node[2] != "*" and len(children) > 0:
+            gene_node = node[1]
+            assigns = MPR[node]
+            for a in assigns:
+                r = MPR[a]
+                assert len(r) == 1, "Invalid MPR: {}".format(r)
+                r = r[0]
+                if r[0] is NodeType.REARRANGEMENT:
+                    # r[2] is the location mapping with the new syntenic location
+                    species = get_species_mappings(r[2][1], MPR)
+                    event = (NodeType.REARRANGEMENT, r[2][1], r[2][2], species)
+                    events.append(event)
+    return events

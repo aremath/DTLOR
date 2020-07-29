@@ -32,6 +32,9 @@ def reconcile(argT):
         MPR = new_DTLOR_DP.find_MPR(G)
         node_median_graph = new_DTLOR_DP.build_node_median_graph(G)
         event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
+        # Here is how to get the events for one MPR from the graph
+        event_mpr = new_DTLOR_DP.find_MPR(event_median_graph) # Note: use rand=True to get a random median MPR
+        events = new_DTLOR_DP.get_events(event_mpr)
         print("Min Cost: {}, {}".format(cost, nmprs))
         #print("Old Min Cost: {}, {}".format(old_cost, nmprs))
         if cost < best_score: 
