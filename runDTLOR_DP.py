@@ -22,9 +22,7 @@ def loadD(fn):
             D[gene]=value
     return D
 
-## main
-#TODO: proper CLI
-
+# Main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Maximum Parsimony DTLOR reconciliation")
     parser.add_argument("species", metavar="<species_tree>", help="file path for species tree")
