@@ -30,20 +30,27 @@ def reconcile(argT):
         #old_cost, old_G, old_nmprs = DTLOR_DP.DP(speciesTreeD, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
         nmprs = new_DTLOR_DP.count_MPRs(G)[(new_DTLOR_DP.NodeType.ROOT,)]
         MPR = new_DTLOR_DP.find_MPR(G)
-        node_median_graph = new_DTLOR_DP.build_node_median_graph(G)
-        event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
+        # Get the median graph
+        #node_median_graph = new_DTLOR_DP.build_node_median_graph(G)
+        #event_mpr = new_DTLOR_DP.build_event_median_graph(MPR)
         # Here is how to get the events for one MPR from the graph
-        event_mpr = new_DTLOR_DP.find_MPR(event_median_graph) # Note: use rand=True to get a random median MPR
-        events = new_DTLOR_DP.get_events(event_mpr)
-        print("Min Cost: {}, {}".format(cost, nmprs))
-        #print("Old Min Cost: {}, {}".format(old_cost, nmprs))
+        #event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
+        #event_mpr = new_DTLOR_DP.find_MPR(event_median_graph) # Note: use rand=True to get a random median MPR
+        #print(new_DTLOR_DP.get_events(event_mpr))
+        # Ensure that they each have all location mappings
+        #mpr_maps = [node for node in MPR if node[0] is new_DTLOR_DP.NodeType.LOCATION_MAPPING]
+        #event_maps = [node for node in event_mpr if node[0] is new_DTLOR_DP.NodeType.LOCATION_MAPPING]
+        #assert len(mpr_maps) == len(event_maps)
+        print("Min Cost: {}".format(cost))
+        print("MPRS: {}".format(nmprs))
+        print()
         if cost < best_score: 
             # If the score is better than current best
             # Update best score, clear record and add new record
             best_score=cost
             bestMPRs=[(geneRtreeO, MPR)]
         elif cost==best_score:
-            bestMPRs.append((geneRtreeO,MPR))
+            bestMPRs.append((geneRtreeO, MPR))
 
     #sample one MPR from the MPRs for this specific unrooted tree
     optRootedGeneTree, optMPR = random.choice(bestMPRs) 
