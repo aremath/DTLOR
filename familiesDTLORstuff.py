@@ -30,17 +30,20 @@ def reconcile(argT):
         #old_cost, old_G, old_nmprs = DTLOR_DP.DP(speciesTreeD, geneTreeD, tipMapD, gtLocusMapD, D, T, L, O, R)
         nmprs = new_DTLOR_DP.count_MPRs(G)[(new_DTLOR_DP.NodeType.ROOT,)]
         MPR = new_DTLOR_DP.find_MPR(G)
+        #event_mpr = new_DTLOR_DP.build_event_median_graph(MPR)
         # Get the median graph
         #node_median_graph = new_DTLOR_DP.build_node_median_graph(G)
-        #event_mpr = new_DTLOR_DP.build_event_median_graph(MPR)
         # Here is how to get the events for one MPR from the graph
-        #event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
-        #event_mpr = new_DTLOR_DP.find_MPR(event_median_graph) # Note: use rand=True to get a random median MPR
+        event_median_graph = new_DTLOR_DP.build_event_median_graph(G)
+        event_mpr = new_DTLOR_DP.find_MPR(event_median_graph) # Note: use rand=True to get a random median MPR
         #print(new_DTLOR_DP.get_events(event_mpr))
         # Ensure that they each have all location mappings
         #mpr_maps = [node for node in MPR if node[0] is new_DTLOR_DP.NodeType.LOCATION_MAPPING]
         #event_maps = [node for node in event_mpr if node[0] is new_DTLOR_DP.NodeType.LOCATION_MAPPING]
         #assert len(mpr_maps) == len(event_maps)
+        events = new_DTLOR_DP.get_events(event_mpr)
+        event_cost = new_DTLOR_DP.score_events(events, D, T, L, O, R)
+        assert cost == event_cost, "Alg: {}, Events: {}".format(cost, event_cost)
         print("Min Cost: {}".format(cost))
         print("MPRS: {}".format(nmprs))
         print()

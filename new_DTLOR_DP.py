@@ -77,7 +77,7 @@ from DTLOR_DP import check_tip, preorder, postorder, delta_r, find_min_events
 # In this new representation, O and R events have their own nodes, with only one child. For example, if (g1, l1)
 # rearranges to (g2, l2) along the (g1, l1) branch, the corresponding graph will look like:
 # { (NodeType.LOCATION_MAPPING, g1, l1) : (NodeType.LOCATION_ASSIGNMENT((.., g2, ...), (.., g3, ...)))
-# NodeType.LOCATION_ASSIGNMENT((.., g2, ...), (.., g3, ...)): [(NodeType.REARRANGEMENT, ...)]
+# NodeType.LOCATION_ASSIGNMENT((.., g2, ...), (.., g3, ...), (..., g1, ...)): [(NodeType.REARRANGEMENT, ...)]
 # (NodeType.REARRANGEMENT, ...) : [(NodeType.LOCATION_MAPPING, g2, l2)]}
 # For the ... in the above example, the rearrangement is labeled with both the parent and the child nodes in order
 # to ensure uniqueness.
@@ -603,7 +603,10 @@ def create_r_events(node, G, event_graph):
     # should be introduced
     event_graph[node] = []
     for l, r in product(l_maps, r_maps):
-        assignment = (NodeType.LOCATION_ASSIGNMENT, l, r)
+        # Add the node to the assignment signature: In this case, two
+        # nodes should not share their assignments, since those assignments will
+        # have different rearrangement node children
+        assignment = (NodeType.LOCATION_ASSIGNMENT, l, r, node)
         if l[2] == node[2]:
             l_node = l
         else:
@@ -715,3 +718,23 @@ def get_events(MPR):
                     event = (NodeType.REARRANGEMENT, n[2][1], n[2][2], species)
                     events.append(event)
     return events
+
+def score_event(event, d, t, l, o, r):
+    if event[0] is NodeType.COSPECIATION:
+        return 0
+    elif event[0] is NodeType.DUPLICATION:
+        return d
+    elif event[0] is NodeType.TRANSFER:
+        return t
+    elif event[0] is NodeType.LOSS:
+        return l
+    elif event[0] is NodeType.ORIGIN:
+        return o
+    elif event[0] is NodeType.REARRANGEMENT:
+        return r
+    else:
+        assert False, "Bad Event Type: {}".format(event[0])
+
+def score_events(events_list, d, t, l, o, r):
+    return sum(map(lambda x: score_event(x, d, t, l, o, r), events_list))
+
