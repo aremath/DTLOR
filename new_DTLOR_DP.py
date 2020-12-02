@@ -454,6 +454,7 @@ def iter_MPRs_helper(node, G):
     if len(children) > 0:
         if node[0].graph_type is GraphType.CHOOSE:
             for child in children:
+                # Yield a different sub-MPR for each choice of child
                 for sub_mpr in iter_MPRs_helper(child, G):
                     mpr = {node: [child]}
                     mpr.update(sub_mpr)
@@ -463,11 +464,13 @@ def iter_MPRs_helper(node, G):
             # Use * operator to unpack list comprehension
             for subcombo in product(*[iter_MPRs_helper(child, G) for child in children]):
                 mpr = {node: children}
+                # The sub-MPR for each child
                 for child_mpr in subcombo:
                     mpr.update(child_mpr)
                 yield mpr
         else:
             assert False, "Bad GraphType"
+    # Base case: no children
     else:
         yield {node: []}
 
